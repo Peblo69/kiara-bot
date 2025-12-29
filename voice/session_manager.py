@@ -86,13 +86,34 @@ class VoiceSessionManager:
         guild_id = channel.guild.id
 
         try:
-            # Disconnect if already connected
+            # Check if already connected to this guild
             if guild_id in self._voice_clients:
-                await self.leave_channel(guild_id)
+                vc = self._voice_clients[guild_id]
+                if vc.is_connected():
+                    print(f"[VoiceManager] Already connected to voice in guild {guild_id}")
+                    return True
+                else:
+                    # Clean up stale connection
+                    await self.leave_channel(guild_id)
 
-            # Connect to voice channel
-            vc = await channel.connect()
+            # Check if bot is already in a voice channel (not tracked by us)
+            guild = channel.guild
+            if guild.voice_client:
+                # Disconnect existing connection
+                await guild.voice_client.disconnect(force=True)
+                await asyncio.sleep(0.5)
+
+            # Connect to voice channel with longer timeout
+            vc = await channel.connect(timeout=30.0, reconnect=True)
             self._voice_clients[guild_id] = vc
+
+            # Wait for connection to stabilize
+            await asyncio.sleep(1.0)
+
+            # Verify connection
+            if not vc.is_connected():
+                print(f"[VoiceManager] Connection not established")
+                return False
 
             # Create audio player
             self._audio_players[guild_id] = VoicePlayer(vc)
@@ -105,8 +126,11 @@ class VoiceSessionManager:
             self._audio_sinks[guild_id] = sink
 
             # Start recording with the sink (py-cord API)
-            # Note: Recording captures all users speaking in the channel
-            vc.start_recording(sink, self._on_recording_stopped, guild_id)
+            try:
+                vc.start_recording(sink, self._on_recording_stopped, guild_id)
+            except Exception as rec_err:
+                print(f"[VoiceManager] Recording start failed: {rec_err}")
+                # Continue anyway - playback will still work
 
             self._queue[guild_id] = []
 

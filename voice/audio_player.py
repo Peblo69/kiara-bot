@@ -8,10 +8,23 @@ import io
 import subprocess
 import tempfile
 import os
+import sys
 from typing import Optional, Any
 from collections import deque
 
 import discord
+
+# Get FFmpeg path (local or system)
+def get_ffmpeg_path() -> str:
+    """Get path to FFmpeg executable"""
+    # Check for local ffmpeg.exe in project root
+    local_ffmpeg = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'ffmpeg.exe')
+    if os.path.exists(local_ffmpeg):
+        return local_ffmpeg
+    # Fall back to system PATH
+    return 'ffmpeg'
+
+FFMPEG_PATH = get_ffmpeg_path()
 
 from .audio_utils import AudioProcessor
 
@@ -201,6 +214,7 @@ class VoicePlayer:
                 source = discord.FFmpegPCMAudio(
                     temp_path,
                     before_options='-f s16le -ar 48000 -ac 2',
+                    executable=FFMPEG_PATH,
                 )
                 return source
             finally:

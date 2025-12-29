@@ -28,6 +28,9 @@ except ImportError as e:
 # Bot setup
 intents = discord.Intents.default()
 intents.message_content = True
+intents.voice_states = True  # Required for voice
+intents.guilds = True
+intents.members = True  # For voice channel member info
 bot = discord.Bot(intents=intents)
 
 # Global queue
@@ -856,32 +859,26 @@ async def mystudio_command(ctx: discord.ApplicationContext):
 
 # ============== VOICE COMMANDS ==============
 
-# Create voice command group
-voice = bot.create_group("voice", "Voice AI commands - Talk to Kiara!")
-
-
-@voice.command(name="join", description="Kiara joins your voice channel")
-async def voice_join(ctx: discord.ApplicationContext):
+@bot.slash_command(name="vjoin", description="Kiara joins your voice channel")
+async def vjoin(ctx: discord.ApplicationContext):
     """Make Kiara join the user's voice channel"""
+    await ctx.defer()
+
     if not VOICE_AVAILABLE:
-        await ctx.respond("Voice AI is not available. Missing dependencies.", ephemeral=True)
+        await ctx.followup.send("Voice AI is not available. Missing dependencies.", ephemeral=True)
         return
 
-    # Check if user is in a voice channel
     if not ctx.author.voice or not ctx.author.voice.channel:
-        await ctx.respond("You need to be in a voice channel first!", ephemeral=True)
+        await ctx.followup.send("You need to be in a voice channel first!", ephemeral=True)
         return
 
     voice_channel = ctx.author.voice.channel
     voice_mgr = get_voice_manager()
 
     if not voice_mgr:
-        await ctx.respond("Voice manager not initialized.", ephemeral=True)
+        await ctx.followup.send("Voice manager not initialized.", ephemeral=True)
         return
 
-    await ctx.defer()
-
-    # Join the channel
     success = await voice_mgr.join_channel(voice_channel)
 
     if success:
@@ -893,7 +890,7 @@ async def voice_join(ctx: discord.ApplicationContext):
                 "• Say **\"Hey Kiara\"** to start a conversation\n"
                 "• Speak naturally - I'll respond in real-time\n"
                 "• Say **\"stop\"** or **\"bye\"** when done\n\n"
-                "*Or use `/voice talk` to start immediately*"
+                "*Or use `/vtalk` to start immediately*"
             ),
             color=BOT_COLOR
         )
@@ -902,8 +899,8 @@ async def voice_join(ctx: discord.ApplicationContext):
         await ctx.followup.send("Failed to join voice channel. Check my permissions!", ephemeral=True)
 
 
-@voice.command(name="leave", description="Kiara leaves the voice channel")
-async def voice_leave(ctx: discord.ApplicationContext):
+@bot.slash_command(name="vleave", description="Kiara leaves the voice channel")
+async def vleave(ctx: discord.ApplicationContext):
     """Make Kiara leave the voice channel"""
     if not VOICE_AVAILABLE:
         await ctx.respond("Voice AI is not available.", ephemeral=True)
@@ -922,39 +919,34 @@ async def voice_leave(ctx: discord.ApplicationContext):
     await ctx.respond("👋 Left the voice channel. Talk to you later!", ephemeral=True)
 
 
-@voice.command(name="talk", description="Start talking to Kiara immediately (skip wake word)")
-async def voice_talk(ctx: discord.ApplicationContext):
+@bot.slash_command(name="vtalk", description="Start talking to Kiara (skip wake word)")
+async def vtalk(ctx: discord.ApplicationContext):
     """Manually trigger conversation with Kiara"""
+    await ctx.defer()
+
     if not VOICE_AVAILABLE:
-        await ctx.respond("Voice AI is not available.", ephemeral=True)
+        await ctx.followup.send("Voice AI is not available.", ephemeral=True)
         return
 
     voice_mgr = get_voice_manager()
     if not voice_mgr:
-        await ctx.respond("Voice manager not initialized.", ephemeral=True)
+        await ctx.followup.send("Voice manager not initialized.", ephemeral=True)
         return
 
-    # Check if bot is in voice
     if not voice_mgr.is_connected(ctx.guild.id):
-        # Auto-join if user is in voice
         if ctx.author.voice and ctx.author.voice.channel:
-            await ctx.defer()
             success = await voice_mgr.join_channel(ctx.author.voice.channel)
             if not success:
                 await ctx.followup.send("Failed to join voice channel!", ephemeral=True)
                 return
         else:
-            await ctx.respond("Join a voice channel first, or use `/voice join`!", ephemeral=True)
+            await ctx.followup.send("Join a voice channel first, or use `/vjoin`!", ephemeral=True)
             return
-    else:
-        await ctx.defer()
 
-    # Check if user is in same voice channel
     if not ctx.author.voice or not ctx.author.voice.channel:
         await ctx.followup.send("You need to be in the voice channel!", ephemeral=True)
         return
 
-    # Trigger conversation
     success = await voice_mgr.trigger_wake(ctx.guild.id, ctx.author)
 
     if success:
@@ -969,7 +961,6 @@ async def voice_talk(ctx: discord.ApplicationContext):
         )
         await ctx.followup.send(embed=embed)
     else:
-        # Might be in queue
         session = voice_mgr.get_active_session(ctx.guild.id)
         if session:
             await ctx.followup.send(
@@ -981,8 +972,8 @@ async def voice_talk(ctx: discord.ApplicationContext):
             await ctx.followup.send("Failed to start conversation. Try again!", ephemeral=True)
 
 
-@voice.command(name="stop", description="End your conversation with Kiara")
-async def voice_stop(ctx: discord.ApplicationContext):
+@bot.slash_command(name="vstop", description="End your conversation with Kiara")
+async def vstop(ctx: discord.ApplicationContext):
     """End the current voice conversation"""
     if not VOICE_AVAILABLE:
         await ctx.respond("Voice AI is not available.", ephemeral=True)
@@ -993,13 +984,12 @@ async def voice_stop(ctx: discord.ApplicationContext):
         await ctx.respond("Voice manager not initialized.", ephemeral=True)
         return
 
-    # End user's session
     await voice_mgr.end_session(ctx.author.id)
     await ctx.respond("✅ Conversation ended!", ephemeral=True)
 
 
-@voice.command(name="status", description="Check voice AI status")
-async def voice_status(ctx: discord.ApplicationContext):
+@bot.slash_command(name="vstatus", description="Check voice AI status")
+async def vstatus(ctx: discord.ApplicationContext):
     """Show voice AI status"""
     if not VOICE_AVAILABLE:
         await ctx.respond("Voice AI is not available. Missing dependencies.", ephemeral=True)
@@ -1033,7 +1023,7 @@ async def voice_status(ctx: discord.ApplicationContext):
             inline=True
         )
 
-    embed.set_footer(text="Use /voice join to bring Kiara to your channel")
+    embed.set_footer(text="Use /vjoin to bring Kiara to your channel")
     await ctx.respond(embed=embed)
 
 
