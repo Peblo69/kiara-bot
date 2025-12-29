@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 import os
 import sys
+import logging
 from typing import Optional, Any
 from collections import deque
 
@@ -27,6 +28,8 @@ def get_ffmpeg_path() -> str:
 FFMPEG_PATH = get_ffmpeg_path()
 
 from .audio_utils import AudioProcessor
+
+logger = logging.getLogger("voice.playback")
 
 
 class VoicePlayer:
@@ -158,6 +161,7 @@ class VoicePlayer:
             # Get buffer contents and clear
             audio_data = bytes(self._audio_buffer)
             self._audio_buffer.clear()
+            logger.debug("playback buffer bytes=%d", len(audio_data))
 
             # Convert Gemini audio (24kHz mono) to Discord format (48kHz stereo)
             discord_audio = AudioProcessor.gemini_to_discord(audio_data)
@@ -167,6 +171,7 @@ class VoicePlayer:
 
             if source and not self._stop_requested:
                 self._is_playing = True
+                logger.debug("playback start")
 
                 # Wait for current playback to finish
                 while self.vc.is_playing():

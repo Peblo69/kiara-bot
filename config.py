@@ -16,3 +16,7 @@ RATE_LIMIT_RPM = int(os.getenv("RATE_LIMIT_RPM", "10"))
 # Bot branding
 BOT_NAME = "Kiara Intelligence"
 BOT_COLOR = 0x5865F2  # Discord blurple
+
+# Voice push-to-talk (local keyboard)
+VOICE_PTT_ENABLED = os.getenv("VOICE_PTT_ENABLED", "0") == "1"
+VOICE_PTT_KEY = os.getenv("VOICE_PTT_KEY", "num 3")

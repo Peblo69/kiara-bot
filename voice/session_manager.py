@@ -4,10 +4,13 @@ Orchestrates voice conversations - ties everything together
 """
 
 import asyncio
+import logging
 from typing import Dict, Optional, Any, Set
 from dataclasses import dataclass, field
 from datetime import datetime
 import discord
+
+logger = logging.getLogger("voice.session")
 
 from .audio_utils import AudioProcessor
 from .gemini_live import GeminiLiveSession
@@ -73,6 +76,11 @@ class VoiceSessionManager:
         # Lock for thread safety
         self._lock = asyncio.Lock()
 
+        # Push-to-talk (PTT) controls
+        self._ptt_enabled = False
+        self._ptt_owner: Optional[tuple[int, int]] = None  # (guild_id, user_id)
+        self._ptt_key_down = False
+
     async def join_channel(self, channel: discord.VoiceChannel) -> bool:
         """
         Join a voice channel and start listening
@@ -84,27 +92,32 @@ class VoiceSessionManager:
             True if successfully joined
         """
         guild_id = channel.guild.id
+        logger.info(f"[VoiceManager] join_channel called for {channel.name} (guild {guild_id})")
 
         try:
             # Check if already connected to this guild
             if guild_id in self._voice_clients:
                 vc = self._voice_clients[guild_id]
                 if vc.is_connected():
-                    print(f"[VoiceManager] Already connected to voice in guild {guild_id}")
+                    logger.info(f"[VoiceManager] Already connected to voice in guild {guild_id}")
                     return True
                 else:
                     # Clean up stale connection
+                    logger.info("[VoiceManager] Cleaning up stale connection...")
                     await self.leave_channel(guild_id)
 
             # Check if bot is already in a voice channel (not tracked by us)
             guild = channel.guild
             if guild.voice_client:
                 # Disconnect existing connection
+                logger.info("[VoiceManager] Disconnecting existing voice client...")
                 await guild.voice_client.disconnect(force=True)
                 await asyncio.sleep(0.5)
 
             # Connect to voice channel with longer timeout
+            logger.info(f"[VoiceManager] Calling channel.connect(timeout=30)...")
             vc = await channel.connect(timeout=30.0, reconnect=True)
+            logger.info(f"[VoiceManager] channel.connect() returned! vc={vc}")
             self._voice_clients[guild_id] = vc
 
             # Wait for connection to stabilize
@@ -112,8 +125,10 @@ class VoiceSessionManager:
 
             # Verify connection
             if not vc.is_connected():
-                print(f"[VoiceManager] Connection not established")
+                logger.error(f"[VoiceManager] Connection not established after connect()")
                 return False
+
+            logger.info("[VoiceManager] Connection established, setting up audio...")
 
             # Create audio player
             self._audio_players[guild_id] = VoicePlayer(vc)
@@ -128,19 +143,21 @@ class VoiceSessionManager:
             # Start recording with the sink (py-cord API)
             try:
                 vc.start_recording(sink, self._on_recording_stopped, guild_id)
+                logger.info("[VoiceManager] Recording started")
             except Exception as rec_err:
-                print(f"[VoiceManager] Recording start failed: {rec_err}")
+                logger.warning(f"[VoiceManager] Recording start failed: {rec_err}")
                 # Continue anyway - playback will still work
 
             self._queue[guild_id] = []
 
-            print(f"[VoiceManager] Joined {channel.name} in {channel.guild.name}")
+            logger.info(f"[VoiceManager] Successfully joined {channel.name} in {channel.guild.name}")
             return True
 
+        except asyncio.TimeoutError as e:
+            logger.error(f"[VoiceManager] TIMEOUT joining channel: {e}")
+            return False
         except Exception as e:
-            print(f"[VoiceManager] Failed to join channel: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error(f"[VoiceManager] Failed to join channel: {e}", exc_info=True)
             return False
 
     def _on_recording_stopped(self, sink: KiaraAudioSink, guild_id: int) -> None:
@@ -158,6 +175,7 @@ class VoiceSessionManager:
         Args:
             guild_id: Guild ID to leave
         """
+        logger.info(f"[VoiceManager] leave_channel called for guild {guild_id}")
         # End all sessions in this guild
         sessions_to_end = [
             uid for uid, session in self._sessions.items()
@@ -201,6 +219,7 @@ class VoiceSessionManager:
             True if session started successfully
         """
         async with self._lock:
+            logger.info(f"[VoiceManager] start_session: guild={guild_id} user={user_id}")
             # Check if user already has session
             if user_id in self._sessions:
                 return True
@@ -228,7 +247,7 @@ class VoiceSessionManager:
             # Connect to Gemini
             connected = await gemini.connect()
             if not connected:
-                print(f"[VoiceManager] Failed to connect Gemini for user {user_id}")
+                logger.error(f"[VoiceManager] Failed to connect Gemini for user {user_id}")
                 return False
 
             # Create session
@@ -237,6 +256,8 @@ class VoiceSessionManager:
                 user=user,
                 gemini_session=gemini
             )
+            if self._ptt_enabled and self._ptt_owner and self._ptt_owner[1] == user_id:
+                session.is_speaking = self._ptt_key_down
             self._sessions[user_id] = session
 
             # Mark user as active in audio sink
@@ -263,6 +284,7 @@ class VoiceSessionManager:
 
             session = self._sessions[user_id]
             guild_id = session.user.guild.id
+            logger.info(f"[VoiceManager] end_session: guild={guild_id} user={user_id}")
 
             # Disconnect Gemini
             await session.gemini_session.disconnect()
@@ -308,10 +330,13 @@ class VoiceSessionManager:
 
     def _on_audio_chunk(self, guild_id: int, user_id: int, audio_data: bytes) -> None:
         """Called when audio received from user"""
+        logger.debug(f"[VoiceManager] Audio chunk: guild={guild_id} user={user_id} bytes={len(audio_data)}")
         if user_id not in self._sessions:
             return
 
         session = self._sessions[user_id]
+        if self._ptt_enabled and not session.is_speaking:
+            return
 
         # Convert Discord audio to Gemini format
         gemini_audio = AudioProcessor.discord_to_gemini(audio_data)
@@ -326,6 +351,7 @@ class VoiceSessionManager:
 
     def _on_gemini_audio(self, guild_id: int, user_id: int, audio_bytes: bytes) -> None:
         """Called when Gemini sends audio response"""
+        logger.debug(f"[VoiceManager] Gemini audio: guild={guild_id} user={user_id} bytes={len(audio_bytes)}")
         if guild_id not in self._audio_players:
             return
 
@@ -334,7 +360,7 @@ class VoiceSessionManager:
 
     def _on_gemini_text(self, guild_id: int, user_id: int, text: str) -> None:
         """Called when Gemini sends text (transcript)"""
-        print(f"[Kiara] {text}")
+        logger.info(f"[Kiara] {text}")
 
         # Check for end phrases
         text_lower = text.lower()
@@ -362,6 +388,85 @@ class VoiceSessionManager:
         """Check if bot is connected to voice in guild"""
         vc = self._voice_clients.get(guild_id)
         return vc is not None and vc.is_connected()
+
+    def enable_ptt(self, enabled: bool) -> None:
+        """Enable or disable push-to-talk gating"""
+        self._ptt_enabled = enabled
+        logger.info(f"[VoiceManager] PTT enabled: {enabled}")
+
+    def is_ptt_enabled(self) -> bool:
+        """Return True if push-to-talk is enabled"""
+        return self._ptt_enabled
+
+    def get_ptt_owner(self) -> Optional[tuple[int, int]]:
+        """Get the current PTT owner (guild_id, user_id)"""
+        return self._ptt_owner
+
+    def set_ptt_owner(self, guild_id: int, user_id: int) -> None:
+        """Set the Discord user that local PTT controls"""
+        self._ptt_owner = (guild_id, user_id)
+        logger.info(f"[VoiceManager] PTT owner set to user {user_id} in guild {guild_id}")
+
+    async def handle_ptt_press(self) -> None:
+        """Handle local push-to-talk press event"""
+        if not self._ptt_enabled:
+            return
+        if self._ptt_key_down:
+            return
+        self._ptt_key_down = True
+        logger.info("[VoiceManager] PTT press")
+
+        if not self._ptt_owner:
+            logger.warning("[VoiceManager] PTT press ignored: no owner set")
+            return
+
+        guild_id, user_id = self._ptt_owner
+        guild = self.bot.get_guild(guild_id)
+        if not guild:
+            logger.warning("[VoiceManager] PTT press ignored: guild not found")
+            return
+
+        member = guild.get_member(user_id)
+        if not member:
+            try:
+                member = await guild.fetch_member(user_id)
+            except Exception:
+                member = None
+
+        if not member or not member.voice or not member.voice.channel:
+            logger.warning("[VoiceManager] PTT press ignored: user not in voice")
+            return
+
+        if not self.is_connected(guild_id):
+            joined = await self.join_channel(member.voice.channel)
+            if not joined:
+                logger.warning("[VoiceManager] PTT press failed: could not join channel")
+                return
+
+        started = await self.start_session(guild_id, user_id, member)
+        if not started:
+            return
+
+        session = self._sessions.get(user_id)
+        if session:
+            session.is_speaking = True
+
+    async def handle_ptt_release(self) -> None:
+        """Handle local push-to-talk release event"""
+        if not self._ptt_enabled:
+            return
+        if not self._ptt_key_down:
+            return
+        self._ptt_key_down = False
+        logger.info("[VoiceManager] PTT release")
+
+        if not self._ptt_owner:
+            return
+
+        _, user_id = self._ptt_owner
+        session = self._sessions.get(user_id)
+        if session:
+            session.is_speaking = False
 
     async def trigger_wake(self, guild_id: int, user: discord.Member) -> bool:
         """

@@ -5,6 +5,7 @@ Real-time voice-to-voice conversation with native audio
 
 import asyncio
 import os
+import logging
 from typing import Callable, Optional, Any
 from google import genai
 from google.genai import types
@@ -46,6 +47,8 @@ You're hanging out in a Discord server helping people with whatever they need - 
         "Puck", "Charon", "Kore", "Fenrir", "Aoede",
         "Leda", "Orus", "Zephyr", "Nova", "Stella"
     ]
+
+    logger = logging.getLogger("voice.gemini")
 
     def __init__(
         self,
@@ -116,10 +119,11 @@ You're hanging out in a Discord server helping people with whatever they need - 
             # Start receiving responses in background
             self._receive_task = asyncio.create_task(self._receive_loop())
 
+            self.logger.info("Gemini live connected (user_id=%s)", self.user_id)
             return True
 
         except Exception as e:
-            print(f"[GeminiLive] Connection error: {e}")
+            self.logger.error("Gemini live connection error: %s", e)
             self.is_active = False
             return False
 
@@ -134,6 +138,7 @@ You're hanging out in a Discord server helping people with whatever they need - 
             return
 
         try:
+            self.logger.debug("send_audio bytes=%d", len(audio_chunk))
             await self.session.send_realtime_input(
                 audio=types.Blob(
                     data=audio_chunk,
@@ -141,7 +146,7 @@ You're hanging out in a Discord server helping people with whatever they need - 
                 )
             )
         except Exception as e:
-            print(f"[GeminiLive] Send error: {e}")
+            self.logger.error("Gemini live send audio error: %s", e)
 
     async def send_text(self, text: str) -> None:
         """
@@ -154,9 +159,10 @@ You're hanging out in a Discord server helping people with whatever they need - 
             return
 
         try:
+            self.logger.debug("send_text chars=%d", len(text))
             await self.session.send_realtime_input(text=text)
         except Exception as e:
-            print(f"[GeminiLive] Text send error: {e}")
+            self.logger.error("Gemini live send text error: %s", e)
 
     async def _receive_loop(self) -> None:
         """Background task to receive and process Gemini responses"""
@@ -179,6 +185,7 @@ You're hanging out in a Discord server helping people with whatever they need - 
                                     if part.inline_data.mime_type and 'audio' in part.inline_data.mime_type:
                                         audio_bytes = part.inline_data.data
                                         if self.on_audio_response and audio_bytes:
+                                            self.logger.debug("recv_audio bytes=%d", len(audio_bytes))
                                             await self._safe_callback(
                                                 self.on_audio_response,
                                                 audio_bytes
@@ -187,6 +194,7 @@ You're hanging out in a Discord server helping people with whatever they need - 
                                 # Text response (transcript)
                                 if hasattr(part, 'text') and part.text:
                                     if self.on_text_response:
+                                        self.logger.info("recv_text: %s", part.text)
                                         await self._safe_callback(
                                             self.on_text_response,
                                             part.text
@@ -195,11 +203,13 @@ You're hanging out in a Discord server helping people with whatever they need - 
                         # Turn complete signal
                         if response.server_content.turn_complete:
                             if self.on_turn_complete:
+                                self.logger.debug("turn_complete")
                                 await self._safe_callback(self.on_turn_complete)
 
                     # Handle interruption (user started speaking while AI was talking)
                     if response.server_content and response.server_content.interrupted:
                         # Clear any queued audio - user interrupted
+                        self.logger.info("interrupted by user speech")
                         while not self._audio_queue.empty():
                             try:
                                 self._audio_queue.get_nowait()
@@ -209,7 +219,7 @@ You're hanging out in a Discord server helping people with whatever they need - 
         except asyncio.CancelledError:
             pass
         except Exception as e:
-            print(f"[GeminiLive] Receive error: {e}")
+            self.logger.error("Gemini live receive error: %s", e)
             self.is_active = False
 
     async def _safe_callback(self, callback: Callable, *args) -> None:
@@ -219,7 +229,7 @@ You're hanging out in a Discord server helping people with whatever they need - 
             if asyncio.iscoroutine(result):
                 await result
         except Exception as e:
-            print(f"[GeminiLive] Callback error: {e}")
+            self.logger.error("Gemini live callback error: %s", e)
 
     async def disconnect(self) -> None:
         """Close the session and cleanup"""
@@ -240,6 +250,7 @@ You're hanging out in a Discord server helping people with whatever they need - 
             self.session = None
 
         self.client = None
+        self.logger.info("Gemini live disconnected (user_id=%s)", self.user_id)
 
     @property
     def connected(self) -> bool:

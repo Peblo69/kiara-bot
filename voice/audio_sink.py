@@ -5,12 +5,15 @@ Receives audio from users in voice channel using py-cord's native Sinks
 
 import asyncio
 import io
+import logging
 from typing import Callable, Optional, Dict, Any, Set
 from collections import defaultdict
 import time
 
 import discord
 from discord.sinks import Sink, AudioData
+
+logger = logging.getLogger("voice.sink")
 
 
 class KiaraAudioSink(Sink):
@@ -79,6 +82,7 @@ class KiaraAudioSink(Sink):
             data: Raw audio bytes (PCM)
             user: User ID (int, not User object in Sink)
         """
+        logger.debug("sink.write user=%s bytes=%d active=%s", user, len(data), user in self.active_sessions)
         # Get event loop
         if self._loop is None:
             try:

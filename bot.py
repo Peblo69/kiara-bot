@@ -5,9 +5,39 @@ import asyncio
 import io
 import base64
 import aiohttp
+import os
 from datetime import datetime, timezone, timedelta
+import logging
 
-from config import DISCORD_TOKEN, DAILY_LIMIT, RATE_LIMIT_RPM, BOT_NAME, BOT_COLOR
+# Logging setup - use DEBUG_VOICE=1 env var for verbose logging
+_debug_voice = os.getenv("DEBUG_VOICE", "0") == "1"
+logging.basicConfig(
+    level=logging.DEBUG if _debug_voice else logging.INFO,
+    format='%(asctime)s %(levelname)s %(name)s: %(message)s',
+    datefmt='%H:%M:%S'
+)
+
+if _debug_voice:
+    # File logger for persistent voice debugging (local only)
+    _log_path = os.path.join(os.path.dirname(__file__), "voice_run.log")
+    _file_handler = logging.FileHandler(_log_path, encoding="utf-8")
+    _file_handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(name)s: %(message)s'))
+    logging.getLogger().addHandler(_file_handler)
+    # Set specific loggers to DEBUG for voice troubleshooting
+    for logger_name in ["discord", "discord.voice_client", "discord.gateway", "discord.client", "discord.voice_state"]:
+        logging.getLogger(logger_name).setLevel(logging.DEBUG)
+    for logger_name in ["voice.session", "voice.sink", "voice.playback", "voice.gemini", "voice.ptt", "voice.state", "discord.player"]:
+        logging.getLogger(logger_name).setLevel(logging.DEBUG)
+
+from config import (
+    DISCORD_TOKEN,
+    DAILY_LIMIT,
+    RATE_LIMIT_RPM,
+    BOT_NAME,
+    BOT_COLOR,
+    VOICE_PTT_ENABLED,
+    VOICE_PTT_KEY,
+)
 from database import (
     init_db, get_or_create_user, get_daily_usage, increment_usage,
     get_user_settings, update_user_settings,
@@ -25,19 +55,35 @@ except ImportError as e:
     print(f"[WARNING] Voice module not available: {e}")
     VOICE_AVAILABLE = False
 
+try:
+    from voice.ptt_listener import PushToTalkListener
+    PTT_AVAILABLE = True
+except ImportError as e:
+    print(f"[WARNING] PTT listener not available: {e}")
+    PTT_AVAILABLE = False
+
 # Bot setup
 intents = discord.Intents.default()
 intents.message_content = True
 intents.voice_states = True  # Required for voice
 intents.guilds = True
 intents.members = True  # For voice channel member info
-bot = discord.Bot(intents=intents)
+bot = discord.Bot(intents=intents, auto_sync_commands=False)
+
+@bot.event
+async def on_application_command_error(ctx, error):
+    print(f">>> COMMAND ERROR: {error}", flush=True)
+    import traceback
+    traceback.print_exc()
 
 # Global queue
 queue = RateLimitedQueue(requests_per_minute=RATE_LIMIT_RPM)
 
 # Track users waiting to upload
 upload_waiters = {}  # user_id -> channel_id
+
+# Push-to-talk listener (kept alive)
+ptt_listener = None
 
 # Model options - Gemini image models (work globally)
 MODELS = {
@@ -595,21 +641,27 @@ async def on_ready():
 
     # Initialize voice manager
     if VOICE_AVAILABLE:
-        init_voice_manager(bot)
+        voice_mgr = init_voice_manager(bot)
         print("[Voice] Voice session manager initialized")
+
+        if VOICE_PTT_ENABLED:
+            voice_mgr.enable_ptt(True)
+            if PTT_AVAILABLE:
+                global ptt_listener
+                ptt_listener = PushToTalkListener(bot, voice_mgr, VOICE_PTT_KEY)
+                if ptt_listener.start():
+                    print(f"[Voice] Push-to-talk enabled on key: {VOICE_PTT_KEY}")
+                else:
+                    print("[Voice] Push-to-talk enabled but keyboard hook unavailable")
+            else:
+                print("[Voice] Push-to-talk enabled but listener not available")
 
     # Register persistent views (survive bot restarts)
     bot.add_view(WelcomeView())
 
-    # Clear ALL global commands first (removes duplicates)
-    print("Clearing global commands...")
-    await bot.sync_commands(force=True)  # Clear global
-
-    # Then sync to each guild
-    for guild in bot.guilds:
-        print(f"Syncing to: {guild.name}")
-        await bot.sync_commands(guild_ids=[guild.id], force=True)
-    print("Commands synced!")
+    # Skip command sync on startup to avoid rate limits
+    # Commands are auto-synced by py-cord
+    print("Bot ready - skipping manual command sync")
 
 
 @bot.event
@@ -729,6 +781,54 @@ async def on_message(message: discord.Message):
             await panel_message.edit(embed=embed, view=MainPanelView(user_id))
         except:
             pass
+
+
+@bot.event
+async def on_voice_state_update(member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
+    if not VOICE_AVAILABLE or not bot.user:
+        return
+
+    logger = logging.getLogger("voice.state")
+
+    def _fmt_channel(state: discord.VoiceState) -> str:
+        if not state or not state.channel:
+            return "None"
+        return f"{state.channel.name} ({state.channel.id})"
+
+    if member.id == bot.user.id:
+        logger.info(
+            "Bot voice state: guild=%s before=%s after=%s",
+            member.guild.id if member.guild else None,
+            _fmt_channel(before),
+            _fmt_channel(after),
+        )
+        return
+
+    voice_mgr = get_voice_manager()
+    if voice_mgr and voice_mgr.is_ptt_enabled():
+        owner = voice_mgr.get_ptt_owner()
+        if owner and member.id == owner[1]:
+            logger.info(
+                "PTT owner voice state: user=%s before=%s after=%s",
+                member.id,
+                _fmt_channel(before),
+                _fmt_channel(after),
+            )
+
+
+@bot.event
+async def on_voice_server_update(data):
+    logging.getLogger("voice.state").info("Voice server update: %s", data)
+
+
+@bot.event
+async def on_disconnect():
+    logging.getLogger("discord.client").warning("Discord websocket disconnected")
+
+
+@bot.event
+async def on_resumed():
+    logging.getLogger("discord.client").info("Discord websocket resumed")
 
 
 # ============== COMMANDS ==============
@@ -862,24 +962,43 @@ async def mystudio_command(ctx: discord.ApplicationContext):
 @bot.slash_command(name="vjoin", description="Kiara joins your voice channel")
 async def vjoin(ctx: discord.ApplicationContext):
     """Make Kiara join the user's voice channel"""
+    print(f">>> VJOIN CALLED BY {ctx.author}", flush=True)
     await ctx.defer()
+    print(">>> DEFERRED", flush=True)
 
     if not VOICE_AVAILABLE:
+        print(">>> VOICE NOT AVAILABLE", flush=True)
         await ctx.followup.send("Voice AI is not available. Missing dependencies.", ephemeral=True)
         return
 
     if not ctx.author.voice or not ctx.author.voice.channel:
+        print(">>> USER NOT IN VOICE", flush=True)
         await ctx.followup.send("You need to be in a voice channel first!", ephemeral=True)
         return
 
     voice_channel = ctx.author.voice.channel
+    print(f">>> TARGET CHANNEL: {voice_channel.name}", flush=True)
+
     voice_mgr = get_voice_manager()
 
     if not voice_mgr:
+        print(">>> VOICE MANAGER NOT INIT", flush=True)
         await ctx.followup.send("Voice manager not initialized.", ephemeral=True)
         return
 
-    success = await voice_mgr.join_channel(voice_channel)
+    if voice_mgr.is_ptt_enabled():
+        voice_mgr.set_ptt_owner(ctx.guild.id, ctx.author.id)
+
+    print(">>> CALLING join_channel...", flush=True)
+    try:
+        success = await voice_mgr.join_channel(voice_channel)
+        print(f">>> join_channel returned: {success}", flush=True)
+    except Exception as e:
+        print(f">>> EXCEPTION: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
+        await ctx.followup.send(f"Error joining: {e}", ephemeral=True)
+        return
 
     if success:
         embed = discord.Embed(
@@ -894,6 +1013,12 @@ async def vjoin(ctx: discord.ApplicationContext):
             ),
             color=BOT_COLOR
         )
+        if voice_mgr.is_ptt_enabled():
+            embed.add_field(
+                name="Push-to-talk",
+                value=f"Hold `{VOICE_PTT_KEY}` to speak, release to stop sending audio.",
+                inline=False
+            )
         await ctx.followup.send(embed=embed)
     else:
         await ctx.followup.send("Failed to join voice channel. Check my permissions!", ephemeral=True)
@@ -932,6 +1057,9 @@ async def vtalk(ctx: discord.ApplicationContext):
     if not voice_mgr:
         await ctx.followup.send("Voice manager not initialized.", ephemeral=True)
         return
+
+    if voice_mgr.is_ptt_enabled():
+        voice_mgr.set_ptt_owner(ctx.guild.id, ctx.author.id)
 
     if not voice_mgr.is_connected(ctx.guild.id):
         if ctx.author.voice and ctx.author.voice.channel:

@@ -21,3 +21,13 @@ env/
 
 # Generated images
 generated/
+
+# Logs
+*.log
+
+# Large binaries (ffmpeg installed via apt in Docker)
+ffmpeg.exe
+ffprobe.exe
+
+# Test outputs
+test_output.png
