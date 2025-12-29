@@ -64,10 +64,17 @@ async def init_db():
                 model TEXT DEFAULT 'gemini-3-pro-image-preview',
                 quality TEXT DEFAULT '1K',
                 aspect_ratio TEXT DEFAULT '1:1',
+                style TEXT DEFAULT 'none',
                 panel_channel_id INTEGER,
                 panel_message_id INTEGER
             )
         """)
+
+        # Add style column if missing (migration)
+        try:
+            await db.execute("ALTER TABLE user_settings ADD COLUMN style TEXT DEFAULT 'none'")
+        except:
+            pass
 
         # User private channels
         await db.execute("""
@@ -194,6 +201,7 @@ async def get_user_settings(user_id: int) -> dict:
                 "model": "gemini-3-pro-image-preview",
                 "quality": "1K",
                 "aspect_ratio": "1:1",
+                "style": "none",
                 "panel_channel_id": None,
                 "panel_message_id": None
             }
@@ -203,7 +211,7 @@ async def get_user_settings(user_id: int) -> dict:
 
 async def update_user_settings(user_id: int, **kwargs) -> None:
     """Update user settings"""
-    allowed = ["model", "quality", "aspect_ratio", "panel_channel_id", "panel_message_id"]
+    allowed = ["model", "quality", "aspect_ratio", "panel_channel_id", "panel_message_id", "style"]
     updates = {k: v for k, v in kwargs.items() if k in allowed}
 
     if not updates:

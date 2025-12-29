@@ -5,7 +5,7 @@ import asyncio
 import io
 import base64
 import aiohttp
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from config import DISCORD_TOKEN, DAILY_LIMIT, RATE_LIMIT_RPM, BOT_NAME, BOT_COLOR
 from database import (
@@ -54,6 +54,35 @@ ASPECT_RATIOS = {
     "21:9 Ultrawide": "21:9",
 }
 
+# Style presets - added to prompt automatically
+STYLE_PRESETS = {
+    "none": "",
+    "photorealistic": ", ultra realistic, 8k uhd, photorealistic, professional photography, natural lighting",
+    "anime": ", anime style, studio ghibli inspired, cel shaded, vibrant colors, detailed anime art",
+    "cyberpunk": ", cyberpunk style, neon lights, futuristic, blade runner aesthetic, rain, night city",
+    "fantasy": ", fantasy art style, magical, ethereal, detailed illustration, epic fantasy",
+    "oil_painting": ", oil painting style, classical art, brushstrokes visible, museum quality",
+    "watercolor": ", watercolor painting, soft edges, artistic, delicate colors, paper texture",
+    "3d_render": ", 3D render, octane render, unreal engine 5, highly detailed, volumetric lighting",
+    "comic": ", comic book style, bold lines, dynamic, superhero aesthetic, vibrant",
+    "minimalist": ", minimalist style, clean, simple, elegant, white space, modern design",
+}
+
+
+def get_time_until_reset() -> str:
+    """Get human-readable time until midnight UTC reset"""
+    now = datetime.now(timezone.utc)
+    tomorrow = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+    diff = tomorrow - now
+
+    hours = int(diff.total_seconds() // 3600)
+    minutes = int((diff.total_seconds() % 3600) // 60)
+
+    if hours > 0:
+        return f"{hours}h {minutes}m"
+    else:
+        return f"{minutes}m"
+
 
 # ============== HELPERS ==============
 
@@ -75,21 +104,30 @@ def create_panel_embed(user_id: int, settings: dict, refs: list, status: str = N
         color=BOT_COLOR
     )
 
+    # Calculate remaining and reset time
+    remaining = DAILY_LIMIT - usage
+    reset_time = get_time_until_reset()
+
     # Status bar at top
     if status:
         embed.description = f"```\n{status}\n```"
     else:
-        embed.description = f"```\n🟢 Ready to generate ({usage}/{DAILY_LIMIT} today)\n```"
+        if remaining > 0:
+            embed.description = f"```\n🟢 Ready • {remaining} generations left • Resets in {reset_time}\n```"
+        else:
+            embed.description = f"```\n🔴 Limit reached • Resets in {reset_time}\n```"
 
-    # Current configuration in a nice box
+    # Current configuration
     model_name = next((k for k, v in MODELS.items() if v == settings.get("model")), "Gemini 3 Pro")
     quality = settings.get("quality", "1K")
     aspect = settings.get("aspect_ratio", "1:1")
+    style = settings.get("style", "none")
+    style_display = style.replace("_", " ").title() if style != "none" else "None"
 
     config_text = (
-        f"**Model:** {model_name}\n"
-        f"**Quality:** {quality}\n"
-        f"**Aspect:** {aspect}"
+        f"🤖 **{model_name}**\n"
+        f"📐 {quality} • {aspect}\n"
+        f"🎨 Style: {style_display}"
     )
     embed.add_field(name="⚙️ Configuration", value=config_text, inline=True)
 
@@ -99,11 +137,18 @@ def create_panel_embed(user_id: int, settings: dict, refs: list, status: str = N
         ref_lines = [f"• `{r['filename'][:18]}`" for r in refs[:5]]
         ref_text = "\n".join(ref_lines)
     else:
-        ref_text = "*No references*\nUpload images for\nstyle/face transfer"
+        ref_text = "*No references*\nUpload for style/\nface transfer"
 
-    embed.add_field(name=f"📷 References ({ref_count}/5)", value=ref_text, inline=True)
+    embed.add_field(name=f"📷 Refs ({ref_count}/5)", value=ref_text, inline=True)
 
-    embed.set_footer(text="Select options below • Click GENERATE when ready")
+    # Usage stats
+    stats_text = (
+        f"📊 **{usage}/{DAILY_LIMIT}** today\n"
+        f"⏰ Reset: {reset_time}"
+    )
+    embed.add_field(name="📈 Usage", value=stats_text, inline=True)
+
+    embed.set_footer(text="Select options below • Click ✨ GENERATE when ready")
 
     return embed
 
@@ -229,6 +274,35 @@ class MainPanelView(View):
             return
 
         await update_user_settings(self.user_id, aspect_ratio=select.values[0])
+        settings = await get_user_settings(self.user_id)
+        refs = await get_reference_images(self.user_id)
+        usage = await get_daily_usage(self.user_id)
+        embed = create_panel_embed(self.user_id, settings, refs, usage=usage)
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    # Row 4: Style preset dropdown
+    @discord.ui.select(
+        placeholder="🎨 Select Style Preset",
+        options=[
+            discord.SelectOption(label="None (Raw Prompt)", value="none", emoji="⚪"),
+            discord.SelectOption(label="Photorealistic", value="photorealistic", emoji="📷"),
+            discord.SelectOption(label="Anime", value="anime", emoji="🎌"),
+            discord.SelectOption(label="Cyberpunk", value="cyberpunk", emoji="🌃"),
+            discord.SelectOption(label="Fantasy", value="fantasy", emoji="🧙"),
+            discord.SelectOption(label="Oil Painting", value="oil_painting", emoji="🖼️"),
+            discord.SelectOption(label="Watercolor", value="watercolor", emoji="🎨"),
+            discord.SelectOption(label="3D Render", value="3d_render", emoji="💎"),
+            discord.SelectOption(label="Comic Book", value="comic", emoji="💥"),
+            discord.SelectOption(label="Minimalist", value="minimalist", emoji="◽"),
+        ],
+        row=4
+    )
+    async def style_select(self, select: Select, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("Not your panel!", ephemeral=True)
+            return
+
+        await update_user_settings(self.user_id, style=select.values[0])
         settings = await get_user_settings(self.user_id)
         refs = await get_reference_images(self.user_id)
         usage = await get_daily_usage(self.user_id)
@@ -439,17 +513,23 @@ class PromptModal(Modal):
         refs = await get_reference_images(self.user_id)
         usage = await get_daily_usage(self.user_id)
 
-        # Get model name for display
-        model_name = next((k for k, v in MODELS.items() if v == settings.get("model")), "Gemini")
+        # Apply style preset to prompt
+        style_key = settings.get("style", "none")
+        style_suffix = STYLE_PRESETS.get(style_key, "")
+        full_prompt = prompt + style_suffix
 
-        # Update panel to show generating status with nice output
+        # Get display names
+        model_name = next((k for k, v in MODELS.items() if v == settings.get("model")), "Gemini")
+        style_name = style_key.replace("_", " ").title() if style_key != "none" else "None"
+
+        # Update panel to show generating status
         if self.panel_message:
             gen_status = (
                 f"🎨 GENERATING YOUR IMAGE...\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"📝 {prompt[:50]}{'...' if len(prompt) > 50 else ''}\n"
+                f"📝 {prompt[:45]}{'...' if len(prompt) > 45 else ''}\n"
                 f"🤖 {model_name} • {settings.get('quality', '1K')} • {settings.get('aspect_ratio', '1:1')}\n"
-                f"📷 {len(refs)} reference(s)"
+                f"🎨 Style: {style_name} • 📷 {len(refs)} ref(s)"
             )
             embed = create_panel_embed(self.user_id, settings, refs, status=gen_status, usage=usage)
             await interaction.response.edit_message(embed=embed, view=MainPanelView(self.user_id))
@@ -460,7 +540,7 @@ class PromptModal(Modal):
             ref_images = [{"base64": r["image_data"], "mimeType": r["mime_type"]} for r in refs]
 
             image_bytes = await imagen.generate_with_refs(
-                prompt=prompt,
+                prompt=full_prompt,  # Use prompt with style
                 reference_images=ref_images,
                 aspect_ratio=settings["aspect_ratio"],
                 quality=settings["quality"],
