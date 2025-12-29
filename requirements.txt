@@ -1,0 +1,20 @@
+# Discord
+py-cord==2.6.1
+discord-ext-voice-recv==0.6.0
+
+# Google AI
+google-generativeai==0.8.3
+google-genai>=1.0.0
+
+# Core
+python-dotenv==1.0.1
+aiosqlite==0.20.0
+Pillow==10.4.0
+
+# Voice/Audio Processing
+numpy>=1.24.0
+scipy>=1.11.0
+PyAudio>=0.2.14
+
+# Wake Word Detection (FREE for personal use)
+pvporcupine>=3.0.0

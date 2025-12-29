@@ -1,0 +1,963 @@
+import discord
+from discord import option
+from discord.ui import View, Button, Select, Modal, InputText
+import asyncio
+import io
+import base64
+import aiohttp
+from datetime import datetime, timezone
+
+from config import DISCORD_TOKEN, DAILY_LIMIT, RATE_LIMIT_RPM, BOT_NAME, BOT_COLOR
+from database import (
+    init_db, get_or_create_user, get_daily_usage, increment_usage,
+    get_user_settings, update_user_settings,
+    save_reference_image, get_reference_images, delete_reference_image, clear_all_references,
+    save_user_channel, get_user_channel
+)
+from imagen import imagen
+from rate_limiter import RateLimitedQueue
+
+# Voice AI imports
+try:
+    from voice.session_manager import VoiceSessionManager, init_voice_manager, get_voice_manager
+    VOICE_AVAILABLE = True
+except ImportError as e:
+    print(f"[WARNING] Voice module not available: {e}")
+    VOICE_AVAILABLE = False
+
+# Bot setup
+intents = discord.Intents.default()
+intents.message_content = True
+bot = discord.Bot(intents=intents)
+
+# Global queue
+queue = RateLimitedQueue(requests_per_minute=RATE_LIMIT_RPM)
+
+# Track users waiting to upload
+upload_waiters = {}  # user_id -> channel_id
+
+# Model options - Gemini image models (work globally)
+MODELS = {
+    "Gemini 3 Pro": "gemini-3-pro-image-preview",
+    "Gemini 2.5 Flash": "gemini-2.5-flash-image",
+    "Gemini 2.5 Preview": "gemini-2.5-flash-image-preview",
+}
+
+QUALITIES = ["1K", "2K", "4K"]
+
+ASPECT_RATIOS = {
+    "1:1 Square": "1:1",
+    "16:9 Landscape": "16:9",
+    "9:16 Portrait": "9:16",
+    "4:3 Standard": "4:3",
+    "3:4 Portrait": "3:4",
+    "21:9 Ultrawide": "21:9",
+}
+
+
+# ============== HELPERS ==============
+
+async def download_image(url: str) -> tuple[bytes, str]:
+    """Download image and return bytes + mime type"""
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as resp:
+            if resp.status == 200:
+                data = await resp.read()
+                content_type = resp.headers.get('content-type', 'image/png')
+                return data, content_type
+    raise Exception("Failed to download image")
+
+
+def create_panel_embed(user_id: int, settings: dict, refs: list, status: str = None, usage: int = 0) -> discord.Embed:
+    """Create the main control panel embed - advanced look"""
+    embed = discord.Embed(
+        title=f"✨ {BOT_NAME}",
+        color=BOT_COLOR
+    )
+
+    # Status bar at top
+    if status:
+        embed.description = f"```\n{status}\n```"
+    else:
+        embed.description = f"```\n🟢 Ready to generate ({usage}/{DAILY_LIMIT} today)\n```"
+
+    # Current configuration in a nice box
+    model_name = next((k for k, v in MODELS.items() if v == settings.get("model")), "Gemini 3 Pro")
+    quality = settings.get("quality", "1K")
+    aspect = settings.get("aspect_ratio", "1:1")
+
+    config_text = (
+        f"**Model:** {model_name}\n"
+        f"**Quality:** {quality}\n"
+        f"**Aspect:** {aspect}"
+    )
+    embed.add_field(name="⚙️ Configuration", value=config_text, inline=True)
+
+    # Reference images
+    ref_count = len(refs)
+    if ref_count > 0:
+        ref_lines = [f"• `{r['filename'][:18]}`" for r in refs[:5]]
+        ref_text = "\n".join(ref_lines)
+    else:
+        ref_text = "*No references*\nUpload images for\nstyle/face transfer"
+
+    embed.add_field(name=f"📷 References ({ref_count}/5)", value=ref_text, inline=True)
+
+    embed.set_footer(text="Select options below • Click GENERATE when ready")
+
+    return embed
+
+
+# ============== VIEWS ==============
+
+class MainPanelView(View):
+    """Main control panel with dropdowns and buttons"""
+
+    def __init__(self, user_id: int):
+        super().__init__(timeout=None)
+        self.user_id = user_id
+
+    # Row 0: Action buttons
+    @discord.ui.button(label="📤 Upload Refs", style=discord.ButtonStyle.secondary, row=0)
+    async def upload_button(self, button: Button, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("Not your panel!", ephemeral=True)
+            return
+
+        upload_waiters[self.user_id] = {
+            "channel_id": interaction.channel_id,
+            "panel_message": interaction.message
+        }
+
+        settings = await get_user_settings(self.user_id)
+        refs = await get_reference_images(self.user_id)
+        usage = await get_daily_usage(self.user_id)
+        embed = create_panel_embed(self.user_id, settings, refs, status="📤 DROP IMAGES HERE • Type 'done' when finished", usage=usage)
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    @discord.ui.button(label="🗑️ Clear", style=discord.ButtonStyle.secondary, row=0)
+    async def clear_button(self, button: Button, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("Not your panel!", ephemeral=True)
+            return
+
+        await clear_all_references(self.user_id)
+        settings = await get_user_settings(self.user_id)
+        usage = await get_daily_usage(self.user_id)
+        embed = create_panel_embed(self.user_id, settings, [], usage=usage)
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    @discord.ui.button(label="✨ GENERATE", style=discord.ButtonStyle.success, row=0)
+    async def generate_button(self, button: Button, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("Not your panel!", ephemeral=True)
+            return
+
+        await get_or_create_user(interaction.user.id, interaction.user.name)
+        usage = await get_daily_usage(interaction.user.id)
+
+        if usage >= DAILY_LIMIT:
+            settings = await get_user_settings(self.user_id)
+            refs = await get_reference_images(self.user_id)
+            embed = create_panel_embed(self.user_id, settings, refs, status="⛔ DAILY LIMIT REACHED • Resets at midnight UTC", usage=usage)
+            await interaction.response.edit_message(embed=embed, view=self)
+            return
+
+        modal = PromptModal(self.user_id, panel_message=interaction.message)
+        await interaction.response.send_modal(modal)
+
+    # Row 1: Model dropdown
+    @discord.ui.select(
+        placeholder="🤖 Select Model",
+        options=[
+            discord.SelectOption(label="Gemini 3 Pro", value="gemini-3-pro-image-preview", description="Best quality", emoji="⭐"),
+            discord.SelectOption(label="Gemini 2.5 Flash", value="gemini-2.5-flash-image", description="Fast generation", emoji="⚡"),
+            discord.SelectOption(label="Gemini 2.5 Preview", value="gemini-2.5-flash-image-preview", description="Experimental", emoji="🧪"),
+        ],
+        row=1
+    )
+    async def model_select(self, select: Select, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("Not your panel!", ephemeral=True)
+            return
+
+        await update_user_settings(self.user_id, model=select.values[0])
+        settings = await get_user_settings(self.user_id)
+        refs = await get_reference_images(self.user_id)
+        usage = await get_daily_usage(self.user_id)
+        embed = create_panel_embed(self.user_id, settings, refs, usage=usage)
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    # Row 2: Quality dropdown
+    @discord.ui.select(
+        placeholder="📐 Select Quality",
+        options=[
+            discord.SelectOption(label="1K (1024px)", value="1K", description="Standard quality", emoji="1️⃣"),
+            discord.SelectOption(label="2K (2048px)", value="2K", description="High quality", emoji="2️⃣"),
+            discord.SelectOption(label="4K (4096px)", value="4K", description="Ultra quality", emoji="4️⃣"),
+        ],
+        row=2
+    )
+    async def quality_select(self, select: Select, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("Not your panel!", ephemeral=True)
+            return
+
+        await update_user_settings(self.user_id, quality=select.values[0])
+        settings = await get_user_settings(self.user_id)
+        refs = await get_reference_images(self.user_id)
+        usage = await get_daily_usage(self.user_id)
+        embed = create_panel_embed(self.user_id, settings, refs, usage=usage)
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    # Row 3: Aspect ratio dropdown
+    @discord.ui.select(
+        placeholder="🖼️ Select Aspect Ratio",
+        options=[
+            discord.SelectOption(label="1:1 Square", value="1:1", emoji="⬜"),
+            discord.SelectOption(label="16:9 Landscape", value="16:9", emoji="🖥️"),
+            discord.SelectOption(label="9:16 Portrait", value="9:16", emoji="📱"),
+            discord.SelectOption(label="4:3 Standard", value="4:3", emoji="📺"),
+            discord.SelectOption(label="3:4 Portrait", value="3:4", emoji="🖼️"),
+            discord.SelectOption(label="21:9 Ultrawide", value="21:9", emoji="🎬"),
+        ],
+        row=3
+    )
+    async def aspect_select(self, select: Select, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("Not your panel!", ephemeral=True)
+            return
+
+        await update_user_settings(self.user_id, aspect_ratio=select.values[0])
+        settings = await get_user_settings(self.user_id)
+        refs = await get_reference_images(self.user_id)
+        usage = await get_daily_usage(self.user_id)
+        embed = create_panel_embed(self.user_id, settings, refs, usage=usage)
+        await interaction.response.edit_message(embed=embed, view=self)
+
+
+# ============== WELCOME / STUDIO SYSTEM ==============
+
+class WelcomeView(View):
+    """Welcome message with Create Studio button"""
+
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="Create My Studio", style=discord.ButtonStyle.success, emoji="🎨", custom_id="create_studio")
+    async def create_studio_button(self, button: Button, interaction: discord.Interaction):
+        user = interaction.user
+        guild = interaction.guild
+
+        if not guild:
+            await interaction.response.send_message("This only works in a server!", ephemeral=True)
+            return
+
+        # Defer IMMEDIATELY to avoid timeout
+        await interaction.response.defer(ephemeral=True)
+
+        # Check if user already has a studio
+        existing_channel_id = await get_user_channel(user.id, guild.id)
+        if existing_channel_id:
+            existing_channel = guild.get_channel(existing_channel_id)
+            if existing_channel:
+                await interaction.followup.send(
+                    f"You already have a studio! Go to {existing_channel.mention}",
+                    ephemeral=True
+                )
+                return
+
+        try:
+            # Find or create "Studios" category
+            category = discord.utils.get(guild.categories, name="Studios")
+            if not category:
+                category = await guild.create_category(
+                    "Studios",
+                    overwrites={
+                        guild.default_role: discord.PermissionOverwrite(view_channel=False)
+                    }
+                )
+
+            # Create private channel for user
+            overwrites = {
+                guild.default_role: discord.PermissionOverwrite(view_channel=False),
+                user: discord.PermissionOverwrite(
+                    view_channel=True,
+                    send_messages=True,
+                    attach_files=True,
+                    embed_links=True,
+                    read_message_history=True
+                ),
+                guild.me: discord.PermissionOverwrite(
+                    view_channel=True,
+                    send_messages=True,
+                    attach_files=True,
+                    embed_links=True,
+                    manage_messages=True
+                )
+            }
+
+            # Add admin role permissions if exists
+            admin_role = discord.utils.get(guild.roles, name="Admin")
+            if admin_role:
+                overwrites[admin_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+
+            channel = await guild.create_text_channel(
+                f"studio-{user.name.lower().replace(' ', '-')}",
+                category=category,
+                overwrites=overwrites,
+                topic=f"Private studio for {user.name} | Use /panel to start generating"
+            )
+
+            # Save to database
+            await save_user_channel(user.id, channel.id, guild.id)
+            await get_or_create_user(user.id, user.name)
+
+            # Send welcome message in the new channel
+            settings = await get_user_settings(user.id)
+            refs = await get_reference_images(user.id)
+            embed = create_panel_embed(user.id, settings, refs, status="🎉 Studio ready! Click GENERATE to start")
+
+            panel_msg = await channel.send(
+                f"# 🎨 Welcome, {user.mention}!\n"
+                f"Your **private studio** — only you can see this channel.\n"
+                f"All images reply to this panel — click the reply to jump back here!",
+                embed=embed,
+                view=MainPanelView(user.id)
+            )
+
+            # Save panel message ID
+            await update_user_settings(user.id, panel_message_id=panel_msg.id, panel_channel_id=channel.id)
+
+            await interaction.followup.send(
+                f"✅ Your private studio has been created! Go to {channel.mention}",
+                ephemeral=True
+            )
+
+        except discord.Forbidden:
+            await interaction.followup.send(
+                "❌ I don't have permission to create channels. Ask an admin to fix my permissions.",
+                ephemeral=True
+            )
+        except Exception as e:
+            await interaction.followup.send(f"❌ Error: {str(e)[:200]}", ephemeral=True)
+
+
+class ImageActionView(View):
+    """Minimal buttons on generated images"""
+
+    def __init__(self, user_id: int, prompt: str, panel_message_id: int = None):
+        super().__init__(timeout=None)
+        self.user_id = user_id
+        self.prompt = prompt
+        self.panel_message_id = panel_message_id
+
+    @discord.ui.button(label="🔄 Again", style=discord.ButtonStyle.secondary, row=0)
+    async def regenerate_button(self, button: Button, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("Not your image!", ephemeral=True)
+            return
+
+        usage = await get_daily_usage(self.user_id)
+        if usage >= DAILY_LIMIT:
+            await interaction.response.send_message(f"⏰ Limit reached!", ephemeral=True)
+            return
+
+        # Update panel to show generating
+        settings = await get_user_settings(self.user_id)
+        refs = await get_reference_images(self.user_id)
+        channel = interaction.channel
+
+        # Find and update panel
+        panel_msg = None
+        if settings.get("panel_message_id"):
+            try:
+                panel_msg = await channel.fetch_message(settings["panel_message_id"])
+                embed = create_panel_embed(self.user_id, settings, refs, status="🔄 Regenerating...")
+                await panel_msg.edit(embed=embed)
+            except:
+                pass
+
+        await interaction.response.defer()
+
+        try:
+            ref_images = [{"base64": r["image_data"], "mimeType": r["mime_type"]} for r in refs]
+
+            image_bytes = await imagen.generate_with_refs(
+                prompt=self.prompt,
+                reference_images=ref_images,
+                aspect_ratio=settings["aspect_ratio"],
+                quality=settings["quality"],
+                model=settings["model"]
+            )
+
+            await increment_usage(self.user_id)
+
+            # Send image as reply to panel (so clicking jumps to panel)
+            file = discord.File(io.BytesIO(image_bytes), filename="generated.jpg")
+            await channel.send(
+                content=f"`{self.prompt[:80]}`",
+                file=file,
+                view=ImageActionView(self.user_id, self.prompt, settings.get("panel_message_id")),
+                reference=panel_msg if panel_msg else None
+            )
+
+            # Update panel to ready state
+            if panel_msg:
+                new_usage = await get_daily_usage(self.user_id)
+                embed = create_panel_embed(self.user_id, settings, refs, status=f"✅ Done! ({new_usage}/{DAILY_LIMIT} today)")
+                await panel_msg.edit(embed=embed)
+
+        except Exception as e:
+            if panel_msg:
+                embed = create_panel_embed(self.user_id, settings, refs, status=f"❌ {str(e)[:50]}")
+                await panel_msg.edit(embed=embed)
+
+
+class PromptModal(Modal):
+    """Modal for entering generation prompt"""
+
+    def __init__(self, user_id: int, panel_message: discord.Message = None):
+        super().__init__(title="✨ Generate Image")
+        self.user_id = user_id
+        self.panel_message = panel_message
+
+        self.prompt_input = InputText(
+            label="Describe your image",
+            placeholder="A futuristic city at sunset with flying cars...",
+            style=discord.InputTextStyle.paragraph,
+            max_length=1000,
+            required=True
+        )
+        self.add_item(self.prompt_input)
+
+    async def callback(self, interaction: discord.Interaction):
+        prompt = self.prompt_input.value
+        channel = interaction.channel
+
+        settings = await get_user_settings(self.user_id)
+        refs = await get_reference_images(self.user_id)
+        usage = await get_daily_usage(self.user_id)
+
+        # Get model name for display
+        model_name = next((k for k, v in MODELS.items() if v == settings.get("model")), "Gemini")
+
+        # Update panel to show generating status with nice output
+        if self.panel_message:
+            gen_status = (
+                f"🎨 GENERATING YOUR IMAGE...\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"📝 {prompt[:50]}{'...' if len(prompt) > 50 else ''}\n"
+                f"🤖 {model_name} • {settings.get('quality', '1K')} • {settings.get('aspect_ratio', '1:1')}\n"
+                f"📷 {len(refs)} reference(s)"
+            )
+            embed = create_panel_embed(self.user_id, settings, refs, status=gen_status, usage=usage)
+            await interaction.response.edit_message(embed=embed, view=MainPanelView(self.user_id))
+        else:
+            await interaction.response.defer()
+
+        try:
+            ref_images = [{"base64": r["image_data"], "mimeType": r["mime_type"]} for r in refs]
+
+            image_bytes = await imagen.generate_with_refs(
+                prompt=prompt,
+                reference_images=ref_images,
+                aspect_ratio=settings["aspect_ratio"],
+                quality=settings["quality"],
+                model=settings["model"]
+            )
+
+            await increment_usage(self.user_id)
+
+            # Send image as REPLY to panel
+            file = discord.File(io.BytesIO(image_bytes), filename="generated.jpg")
+            panel_id = self.panel_message.id if self.panel_message else None
+
+            await channel.send(
+                content=f"`{prompt[:80]}`",
+                file=file,
+                view=ImageActionView(self.user_id, prompt, panel_id),
+                reference=self.panel_message
+            )
+
+            # Update panel to success state
+            if self.panel_message:
+                new_usage = await get_daily_usage(self.user_id)
+                embed = create_panel_embed(self.user_id, settings, refs, usage=new_usage)
+                await self.panel_message.edit(embed=embed, view=MainPanelView(self.user_id))
+                await update_user_settings(self.user_id, panel_message_id=self.panel_message.id, panel_channel_id=channel.id)
+
+        except Exception as e:
+            if self.panel_message:
+                error_status = f"❌ GENERATION FAILED\n━━━━━━━━━━━━━━━━━━━━━━━━━━━\n{str(e)[:60]}"
+                embed = create_panel_embed(self.user_id, settings, refs, status=error_status, usage=usage)
+                await self.panel_message.edit(embed=embed, view=MainPanelView(self.user_id))
+
+
+# ============== EVENTS ==============
+
+@bot.event
+async def on_ready():
+    print(f"{'='*50}")
+    print(f"  {BOT_NAME} is online!")
+    print(f"  Logged in as: {bot.user}")
+    print(f"  Servers: {len(bot.guilds)}")
+    print(f"  Rate limit: {RATE_LIMIT_RPM} RPM")
+    print(f"  Daily limit: {DAILY_LIMIT} per user")
+    print(f"  Voice AI: {'ENABLED' if VOICE_AVAILABLE else 'DISABLED'}")
+    print(f"{'='*50}")
+
+    await init_db()
+    await queue.start()
+
+    # Initialize voice manager
+    if VOICE_AVAILABLE:
+        init_voice_manager(bot)
+        print("[Voice] Voice session manager initialized")
+
+    # Register persistent views (survive bot restarts)
+    bot.add_view(WelcomeView())
+
+    # Clear ALL global commands first (removes duplicates)
+    print("Clearing global commands...")
+    await bot.sync_commands(force=True)  # Clear global
+
+    # Then sync to each guild
+    for guild in bot.guilds:
+        print(f"Syncing to: {guild.name}")
+        await bot.sync_commands(guild_ids=[guild.id], force=True)
+    print("Commands synced!")
+
+
+@bot.event
+async def on_message(message: discord.Message):
+    """Handle image uploads when user is in upload mode"""
+    if message.author.bot:
+        return
+
+    user_id = message.author.id
+
+    # Check if user is in upload mode
+    if user_id not in upload_waiters:
+        return
+
+    waiter = upload_waiters[user_id]
+    if waiter["channel_id"] != message.channel.id:
+        return
+
+    panel_message = waiter.get("panel_message")
+
+    # Check for cancel/done commands
+    content = message.content.lower().strip()
+    if content == "cancel":
+        del upload_waiters[user_id]
+        # Update panel
+        if panel_message:
+            settings = await get_user_settings(user_id)
+            refs = await get_reference_images(user_id)
+            embed = create_panel_embed(user_id, settings, refs, status="❌ Upload cancelled")
+            try:
+                await panel_message.edit(embed=embed, view=MainPanelView(user_id))
+            except:
+                pass
+        try:
+            await message.delete()
+        except:
+            pass
+        return
+
+    if content == "done":
+        del upload_waiters[user_id]
+        refs = await get_reference_images(user_id)
+        # Update panel
+        if panel_message:
+            settings = await get_user_settings(user_id)
+            embed = create_panel_embed(user_id, settings, refs, status=f"✅ {len(refs)} reference(s) ready")
+            try:
+                await panel_message.edit(embed=embed, view=MainPanelView(user_id))
+            except:
+                pass
+        try:
+            await message.delete()
+        except:
+            pass
+        return
+
+    # Process attachments
+    if not message.attachments:
+        return
+
+    refs = await get_reference_images(user_id)
+    current_count = len(refs)
+
+    for attachment in message.attachments:
+        if current_count >= 5:
+            break
+
+        if not attachment.content_type or not attachment.content_type.startswith("image/"):
+            continue
+
+        try:
+            img_data, mime_type = await download_image(attachment.url)
+            b64_data = base64.b64encode(img_data).decode("utf-8")
+
+            used_slots = [r["slot"] for r in refs]
+            next_slot = next(i for i in range(1, 6) if i not in used_slots)
+
+            await save_reference_image(
+                user_id=user_id,
+                slot=next_slot,
+                image_data=b64_data,
+                mime_type=mime_type,
+                filename=attachment.filename
+            )
+
+            current_count += 1
+            refs = await get_reference_images(user_id)
+
+        except:
+            pass
+
+    # Delete the upload message (keep chat clean!)
+    deleted = False
+    try:
+        await message.delete()
+        deleted = True
+    except discord.Forbidden:
+        # Bot lacks permission - can't delete
+        pass
+    except:
+        pass
+
+    # Update panel with new count
+    if panel_message:
+        settings = await get_user_settings(user_id)
+        if current_count >= 5:
+            del upload_waiters[user_id]
+            status = f"✅ {current_count}/5 refs — Ready to generate!"
+        else:
+            status = f"📤 {current_count}/5 uploaded — Drop more or type `done`"
+
+        if not deleted and current_count > 0:
+            status += " ⚠️"  # Indicate couldn't delete
+
+        embed = create_panel_embed(user_id, settings, refs, status=status)
+        try:
+            await panel_message.edit(embed=embed, view=MainPanelView(user_id))
+        except:
+            pass
+
+
+# ============== COMMANDS ==============
+
+@bot.slash_command(name="imagine", description="Open Kiara AI image generation")
+async def panel_command(ctx: discord.ApplicationContext):
+    """Spawn the control panel"""
+    user_id = ctx.author.id
+
+    await get_or_create_user(user_id, ctx.author.name)
+    settings = await get_user_settings(user_id)
+    refs = await get_reference_images(user_id)
+
+    usage = await get_daily_usage(user_id)
+    embed = create_panel_embed(user_id, settings, refs, usage=usage)
+
+    msg = await ctx.respond(embed=embed, view=MainPanelView(user_id))
+
+    # Save panel message ID
+    if hasattr(msg, 'id'):
+        await update_user_settings(user_id, panel_message_id=msg.id, panel_channel_id=ctx.channel.id)
+
+
+@bot.slash_command(name="quick", description="Quick generate without panel")
+@option("prompt", str, description="Describe your image", required=True)
+async def quick_command(ctx: discord.ApplicationContext, prompt: str):
+    """Quick generation with default settings"""
+    user_id = ctx.author.id
+
+    await get_or_create_user(user_id, ctx.author.name)
+    usage = await get_daily_usage(user_id)
+
+    if usage >= DAILY_LIMIT:
+        await ctx.respond(f"⏰ Daily limit reached ({DAILY_LIMIT}).", ephemeral=True)
+        return
+
+    await ctx.defer()
+
+    settings = await get_user_settings(user_id)
+    refs = await get_reference_images(user_id)
+
+    try:
+        ref_images = [{"base64": r["image_data"], "mimeType": r["mime_type"]} for r in refs]
+
+        image_bytes = await imagen.generate_with_refs(
+            prompt=prompt,
+            reference_images=ref_images,
+            aspect_ratio=settings["aspect_ratio"],
+            quality=settings["quality"],
+            model=settings["model"]
+        )
+
+        await increment_usage(user_id)
+
+        file = discord.File(io.BytesIO(image_bytes), filename="generated.png")
+        embed = discord.Embed(title="✨ Generated", color=BOT_COLOR)
+        embed.add_field(name="Prompt", value=prompt[:1024], inline=False)
+        embed.set_image(url="attachment://generated.png")
+
+        await ctx.followup.send(embed=embed, file=file)
+
+    except Exception as e:
+        await ctx.followup.send(f"❌ Failed: {str(e)[:200]}")
+
+
+# ============== ADMIN COMMANDS ==============
+
+@bot.slash_command(name="setup", description="[Admin] Setup the welcome message with Create Studio button")
+@discord.default_permissions(administrator=True)
+async def setup_command(ctx: discord.ApplicationContext):
+    """Admin command to setup the welcome message"""
+    embed = discord.Embed(
+        title=f"🎨 Welcome to {BOT_NAME}!",
+        description=(
+            "**Free AI Image Generation powered by Google Gemini**\n\n"
+            "✨ **20 free generations per day**\n"
+            "🖼️ High quality 2K images\n"
+            "📷 Use reference images for style/face transfer\n"
+            "🔒 **100% Private** - Your own studio channel\n\n"
+            "Click the button below to create your private studio!"
+        ),
+        color=BOT_COLOR
+    )
+    embed.set_footer(text="Your studio is private - only you and admins can see it")
+
+    await ctx.respond(embed=embed, view=WelcomeView())
+
+
+@bot.slash_command(name="fixperms", description="[Admin] Fix bot permissions in this channel")
+@discord.default_permissions(administrator=True)
+async def fixperms_command(ctx: discord.ApplicationContext):
+    """Grant bot manage_messages in current channel"""
+    try:
+        await ctx.channel.set_permissions(
+            ctx.guild.me,
+            manage_messages=True,
+            send_messages=True,
+            attach_files=True,
+            embed_links=True,
+            view_channel=True
+        )
+        await ctx.respond("✅ Permissions fixed! Bot can now delete messages in this channel.", ephemeral=True)
+    except discord.Forbidden:
+        await ctx.respond("❌ I don't have permission to modify channel permissions.", ephemeral=True)
+    except Exception as e:
+        await ctx.respond(f"❌ Error: {str(e)[:100]}", ephemeral=True)
+
+
+@bot.slash_command(name="mystudio", description="Go to your private studio")
+async def mystudio_command(ctx: discord.ApplicationContext):
+    """Quick link to user's studio"""
+    if not ctx.guild:
+        await ctx.respond("This only works in a server!", ephemeral=True)
+        return
+
+    channel_id = await get_user_channel(ctx.author.id, ctx.guild.id)
+    if channel_id:
+        channel = ctx.guild.get_channel(channel_id)
+        if channel:
+            await ctx.respond(f"Your studio: {channel.mention}", ephemeral=True)
+            return
+
+    await ctx.respond(
+        "You don't have a studio yet! Use the **Create My Studio** button in the welcome channel.",
+        ephemeral=True
+    )
+
+
+# ============== VOICE COMMANDS ==============
+
+# Create voice command group
+voice = bot.create_group("voice", "Voice AI commands - Talk to Kiara!")
+
+
+@voice.command(name="join", description="Kiara joins your voice channel")
+async def voice_join(ctx: discord.ApplicationContext):
+    """Make Kiara join the user's voice channel"""
+    if not VOICE_AVAILABLE:
+        await ctx.respond("Voice AI is not available. Missing dependencies.", ephemeral=True)
+        return
+
+    # Check if user is in a voice channel
+    if not ctx.author.voice or not ctx.author.voice.channel:
+        await ctx.respond("You need to be in a voice channel first!", ephemeral=True)
+        return
+
+    voice_channel = ctx.author.voice.channel
+    voice_mgr = get_voice_manager()
+
+    if not voice_mgr:
+        await ctx.respond("Voice manager not initialized.", ephemeral=True)
+        return
+
+    await ctx.defer()
+
+    # Join the channel
+    success = await voice_mgr.join_channel(voice_channel)
+
+    if success:
+        embed = discord.Embed(
+            title="🎤 Kiara Joined Voice!",
+            description=(
+                f"I'm now in **{voice_channel.name}**!\n\n"
+                "**How to talk to me:**\n"
+                "• Say **\"Hey Kiara\"** to start a conversation\n"
+                "• Speak naturally - I'll respond in real-time\n"
+                "• Say **\"stop\"** or **\"bye\"** when done\n\n"
+                "*Or use `/voice talk` to start immediately*"
+            ),
+            color=BOT_COLOR
+        )
+        await ctx.followup.send(embed=embed)
+    else:
+        await ctx.followup.send("Failed to join voice channel. Check my permissions!", ephemeral=True)
+
+
+@voice.command(name="leave", description="Kiara leaves the voice channel")
+async def voice_leave(ctx: discord.ApplicationContext):
+    """Make Kiara leave the voice channel"""
+    if not VOICE_AVAILABLE:
+        await ctx.respond("Voice AI is not available.", ephemeral=True)
+        return
+
+    voice_mgr = get_voice_manager()
+    if not voice_mgr:
+        await ctx.respond("Voice manager not initialized.", ephemeral=True)
+        return
+
+    if not voice_mgr.is_connected(ctx.guild.id):
+        await ctx.respond("I'm not in a voice channel!", ephemeral=True)
+        return
+
+    await voice_mgr.leave_channel(ctx.guild.id)
+    await ctx.respond("👋 Left the voice channel. Talk to you later!", ephemeral=True)
+
+
+@voice.command(name="talk", description="Start talking to Kiara immediately (skip wake word)")
+async def voice_talk(ctx: discord.ApplicationContext):
+    """Manually trigger conversation with Kiara"""
+    if not VOICE_AVAILABLE:
+        await ctx.respond("Voice AI is not available.", ephemeral=True)
+        return
+
+    voice_mgr = get_voice_manager()
+    if not voice_mgr:
+        await ctx.respond("Voice manager not initialized.", ephemeral=True)
+        return
+
+    # Check if bot is in voice
+    if not voice_mgr.is_connected(ctx.guild.id):
+        # Auto-join if user is in voice
+        if ctx.author.voice and ctx.author.voice.channel:
+            await ctx.defer()
+            success = await voice_mgr.join_channel(ctx.author.voice.channel)
+            if not success:
+                await ctx.followup.send("Failed to join voice channel!", ephemeral=True)
+                return
+        else:
+            await ctx.respond("Join a voice channel first, or use `/voice join`!", ephemeral=True)
+            return
+    else:
+        await ctx.defer()
+
+    # Check if user is in same voice channel
+    if not ctx.author.voice or not ctx.author.voice.channel:
+        await ctx.followup.send("You need to be in the voice channel!", ephemeral=True)
+        return
+
+    # Trigger conversation
+    success = await voice_mgr.trigger_wake(ctx.guild.id, ctx.author)
+
+    if success:
+        embed = discord.Embed(
+            title="🎤 Kiara is Listening!",
+            description=(
+                f"Go ahead **{ctx.author.display_name}**, I'm all ears!\n\n"
+                "• Speak naturally\n"
+                "• Say **\"stop\"** or **\"bye\"** when done"
+            ),
+            color=0x00ff00
+        )
+        await ctx.followup.send(embed=embed)
+    else:
+        # Might be in queue
+        session = voice_mgr.get_active_session(ctx.guild.id)
+        if session:
+            await ctx.followup.send(
+                f"Please wait - I'm currently talking to **{session.user.display_name}**. "
+                "You're in the queue!",
+                ephemeral=True
+            )
+        else:
+            await ctx.followup.send("Failed to start conversation. Try again!", ephemeral=True)
+
+
+@voice.command(name="stop", description="End your conversation with Kiara")
+async def voice_stop(ctx: discord.ApplicationContext):
+    """End the current voice conversation"""
+    if not VOICE_AVAILABLE:
+        await ctx.respond("Voice AI is not available.", ephemeral=True)
+        return
+
+    voice_mgr = get_voice_manager()
+    if not voice_mgr:
+        await ctx.respond("Voice manager not initialized.", ephemeral=True)
+        return
+
+    # End user's session
+    await voice_mgr.end_session(ctx.author.id)
+    await ctx.respond("✅ Conversation ended!", ephemeral=True)
+
+
+@voice.command(name="status", description="Check voice AI status")
+async def voice_status(ctx: discord.ApplicationContext):
+    """Show voice AI status"""
+    if not VOICE_AVAILABLE:
+        await ctx.respond("Voice AI is not available. Missing dependencies.", ephemeral=True)
+        return
+
+    voice_mgr = get_voice_manager()
+    if not voice_mgr:
+        await ctx.respond("Voice manager not initialized.", ephemeral=True)
+        return
+
+    connected = voice_mgr.is_connected(ctx.guild.id)
+    session = voice_mgr.get_active_session(ctx.guild.id)
+
+    embed = discord.Embed(title="🎤 Voice AI Status", color=BOT_COLOR)
+    embed.add_field(
+        name="Connection",
+        value="🟢 Connected" if connected else "🔴 Not in voice",
+        inline=True
+    )
+
+    if session:
+        embed.add_field(
+            name="Active Session",
+            value=f"Talking to: **{session.user.display_name}**",
+            inline=True
+        )
+    else:
+        embed.add_field(
+            name="Active Session",
+            value="None - Say 'Hey Kiara' to start!",
+            inline=True
+        )
+
+    embed.set_footer(text="Use /voice join to bring Kiara to your channel")
+    await ctx.respond(embed=embed)
+
+
+# ============== STARTUP ==============
+
+if __name__ == "__main__":
+    bot.run(DISCORD_TOKEN)
