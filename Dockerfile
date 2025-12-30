@@ -12,6 +12,8 @@ WORKDIR /app
 
 # Copy requirements first for caching
 COPY requirements.txt .
+# Uninstall discord.py if present (conflicts with py-cord)
+RUN pip uninstall -y discord.py discord || true
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code

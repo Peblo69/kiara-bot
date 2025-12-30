@@ -1,6 +1,6 @@
-# Discord
-py-cord==2.6.1
-discord-ext-voice-recv>=0.5.2a179
+# Discord - IMPORTANT: py-cord must be installed, NOT discord.py
+# Uninstall discord.py first if present, then install py-cord
+py-cord[voice]==2.6.1
 
 # Google AI
 google-generativeai==0.8.3
