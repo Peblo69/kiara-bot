@@ -120,7 +120,7 @@ class VoiceSessionManager:
             logger.info(f"[VoiceManager] Calling channel.connect()...")
 
             # Helper to check if voice is actually ready (works around py-cord 2.7 bug)
-            def _is_voice_ready(vc_check) -> bool:
+            def _is_voice_ready(vc_check, debug=False) -> bool:
                 """Check if voice connection is usable, even if is_connected() is False"""
                 if not vc_check:
                     return False
@@ -130,6 +130,10 @@ class VoiceSessionManager:
                 # py-cord 2.7.0 workaround: check internal state
                 try:
                     ws = getattr(vc_check, 'ws', None)
+                    if debug:
+                        logger.info(f"[DEBUG] vc attrs: ws={ws}, channel={getattr(vc_check, 'channel', None)}")
+                        if ws:
+                            logger.info(f"[DEBUG] ws attrs: secret_key={getattr(ws, 'secret_key', 'NONE')}, _keep_alive={getattr(ws, '_keep_alive', 'NONE')}")
                     if ws:
                         # Check for secret_key (indicates encryption is ready)
                         if getattr(ws, 'secret_key', None):
@@ -137,8 +141,9 @@ class VoiceSessionManager:
                         # Check for keepalive (indicates connection is active)
                         if getattr(ws, '_keep_alive', None):
                             return True
-                except Exception:
-                    pass
+                except Exception as e:
+                    if debug:
+                        logger.info(f"[DEBUG] Exception checking voice ready: {e}")
                 return False
 
             # Try connecting with retries
@@ -163,11 +168,16 @@ class VoiceSessionManager:
                     start_time = asyncio.get_event_loop().time()
                     timeout_secs = 15.0
                     
+                    poll_count = 0
                     while asyncio.get_event_loop().time() - start_time < timeout_secs:
                         await asyncio.sleep(0.5)
+                        poll_count += 1
+                        
+                        # Debug every 4th poll (every 2 seconds)
+                        do_debug = (poll_count % 4 == 0)
                         
                         # Check if guild.voice_client is ready (using workaround)
-                        if guild.voice_client and _is_voice_ready(guild.voice_client):
+                        if guild.voice_client and _is_voice_ready(guild.voice_client, debug=do_debug):
                             logger.info(f"[VoiceManager] Voice client ready via polling! is_connected={guild.voice_client.is_connected()}")
                             vc = guild.voice_client
                             # Cancel the connect task if it's still running
