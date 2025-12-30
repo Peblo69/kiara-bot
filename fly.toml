@@ -1,0 +1,14 @@
+app = "kiara-bot"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+# Discord bots don't need HTTP - disable health checks
+[processes]
+  app = "python bot.py"
+
+# No HTTP services needed for Discord bot
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
