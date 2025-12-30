@@ -135,7 +135,7 @@ class VoiceSessionManager:
                     logger.info(f"[VoiceManager] Connection attempt {attempt + 1}/3")
                     
                     # Start connection in background and poll for success
-                    connect_task = asyncio.create_task(channel.connect(timeout=30.0, reconnect=False))
+                    connect_task = asyncio.create_task(channel.connect(timeout=30.0, reconnect=True))
                     
                     # Poll for connection with timeout
                     start_time = asyncio.get_event_loop().time()
