@@ -963,8 +963,15 @@ async def mystudio_command(ctx: discord.ApplicationContext):
 async def vjoin(ctx: discord.ApplicationContext):
     """Make Kiara join the user's voice channel"""
     print(f">>> VJOIN CALLED BY {ctx.author}", flush=True)
-    await ctx.defer()
-    print(">>> DEFERRED", flush=True)
+    try:
+        await ctx.defer()
+        print(">>> DEFERRED", flush=True)
+    except discord.NotFound:
+        print(">>> DEFER FAILED - interaction expired", flush=True)
+        return
+    except Exception as e:
+        print(f">>> DEFER ERROR: {e}", flush=True)
+        return
 
     if not VOICE_AVAILABLE:
         print(">>> VOICE NOT AVAILABLE", flush=True)

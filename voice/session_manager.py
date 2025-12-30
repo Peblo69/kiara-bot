@@ -106,19 +106,15 @@ class VoiceSessionManager:
                     logger.info("[VoiceManager] Cleaning up stale connection...")
                     await self.leave_channel(guild_id)
 
-            # Small delay to ensure gateway is stable
-            await asyncio.sleep(0.5)
-
             # Check if bot is already in a voice channel (not tracked by us)
             guild = channel.guild
             if guild.voice_client:
-                # Disconnect existing connection
                 logger.info("[VoiceManager] Disconnecting existing voice client...")
                 try:
                     await guild.voice_client.disconnect(force=True)
                 except Exception:
                     pass
-                await asyncio.sleep(2.0)  # Wait longer for cleanup
+                await asyncio.sleep(0.5)  # Brief wait for cleanup
 
             # Connect to voice channel with retry logic
             logger.info(f"[VoiceManager] Calling channel.connect(timeout=60)...")
@@ -133,13 +129,12 @@ class VoiceSessionManager:
                         break
                 except Exception as conn_err:
                     logger.warning(f"[VoiceManager] Attempt {attempt + 1} failed: {conn_err}")
-                    # Force cleanup between attempts to avoid "already connected" state
                     try:
                         await self.leave_channel(guild_id)
                     except Exception:
                         pass
                     if attempt < 2:
-                        await asyncio.sleep(2.0)  # Wait before retry
+                        await asyncio.sleep(0.5)  # Brief wait before retry
                     else:
                         raise
 
