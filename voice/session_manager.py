@@ -170,9 +170,12 @@ class VoiceSessionManager:
             )
             self._audio_sinks[guild_id] = sink
 
-            # Skip recording for now - just stay in voice
-            # TODO: Re-enable once voice connection is stable
-            logger.info("[VoiceManager] Skipping audio recording for stability test")
+            # Start recording with the sink (py-cord API)
+            try:
+                vc.start_recording(sink, self._on_recording_stopped, guild_id)
+                logger.info("[VoiceManager] Recording started")
+            except Exception as rec_err:
+                logger.warning(f"[VoiceManager] Recording start failed: {rec_err}")
 
             self._queue[guild_id] = []
 
