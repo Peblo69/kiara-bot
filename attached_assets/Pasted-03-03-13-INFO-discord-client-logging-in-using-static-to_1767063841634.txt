@@ -1,0 +1,45 @@
+03:03:13 INFO discord.client: logging in using static token
+03:03:13 INFO discord.gateway: Shard ID None has sent the IDENTIFY payload.
+03:03:13 INFO discord.gateway: Shard ID None has connected to Gateway: ["gateway-prd-arm-us-east1-b-3pf4",{"micros":220845,"calls":["id_created",{"micros":474,"calls":[]},"session_lookup_time",{"micros":1343,"calls":[]},"session_lookup_finished",{"micros":22,"calls":[]},"discord-sessions-prd-2-79",{"micros":218606,"calls":["start_session",{"micros":206069,"calls":["discord-api-rpc-685f5fd59d-t6fzr",{"micros":160964,"calls":["get_user",{"micros":85617},"get_guilds",{"micros":23054},"send_scheduled_deletion_message",{"micros":15},"guild_join_requests",{"micros":3},"authorized_ip_coro",{"micros":10},"pending_payments",{"micros":519},"apex_experiments",{"micros":37321},"user_activities",{"micros":7},"played_application_ids",{"micros":4},"linked_users",{"micros":3}]}]},"starting_guild_connect",{"micros":42,"calls":[]},"presence_started",{"micros":339,"calls":[]},"guilds_started",{"micros":62,"calls":[]},"lobbies_started",{"micros":1,"calls":[]},"guilds_connect",{"micros":1,"calls":[]},"presence_connect",{"micros":12068,"calls":[]},"connect_finished",{"micros":12076,"calls":[]},"build_ready",{"micros":14,"calls":[]},"clean_ready",{"micros":0,"calls":[]},"optimize_ready",{"micros":1,"calls":[]},"split_ready",{"micros":0,"calls":[]}]}]}] (Session ID: dce37df854f015137d08f4f98094308c).
+==================================================
+  Kiara Intelligence is online!
+  Logged in as: Kiara Intelligence#6723
+  Servers: 1
+  Rate limit: 10 RPM
+  Daily limit: 15 per user
+  Voice AI: ENABLED
+==================================================
+Queue worker started (limit: 10 RPM)
+[Voice] Voice session manager initialized
+Bot ready - skipping manual command sync
+>>> VJOIN CALLED BY yuginoh (ASTRO)
+>>> DEFERRED
+>>> TARGET CHANNEL: Talk & Chill
+>>> CALLING join_channel...
+03:03:52 INFO voice.session: [VoiceManager] join_channel called for Talk & Chill (guild 1075754111896666222)
+03:03:52 INFO voice.session: [VoiceManager] Calling channel.connect(timeout=60)...
+03:03:52 INFO voice.session: [VoiceManager] Connection attempt 1/3
+03:03:52 INFO discord.voice_client: Connecting to voice...
+03:03:52 INFO discord.voice_client: Starting voice handshake... (connection attempt 1)
+03:03:52 INFO voice.state: Bot voice state: guild=1075754111896666222 before=None after=Talk & Chill (1212485856879845428)
+03:03:52 INFO discord.voice_client: Voice handshake complete. Endpoint found c-mxp05-79b431d2.discord.media
+03:03:53 WARNING voice.session: [VoiceManager] Attempt 1 failed: Shard ID None WebSocket closed with 4006
+03:03:53 INFO voice.session: [VoiceManager] leave_channel called for guild 1075754111896666222
+[VoiceManager] Left voice channel in guild 1075754111896666222
+03:03:53 INFO voice.session: [VoiceManager] Connection attempt 2/3
+03:03:53 WARNING voice.session: [VoiceManager] Attempt 2 failed: Already connected to a voice channel.
+03:03:53 INFO voice.session: [VoiceManager] leave_channel called for guild 1075754111896666222
+[VoiceManager] Left voice channel in guild 1075754111896666222
+03:03:54 INFO voice.session: [VoiceManager] Connection attempt 3/3
+03:03:54 WARNING voice.session: [VoiceManager] Attempt 3 failed: Already connected to a voice channel.
+03:03:54 INFO voice.session: [VoiceManager] leave_channel called for guild 1075754111896666222
+[VoiceManager] Left voice channel in guild 1075754111896666222
+03:03:54 ERROR voice.session: [VoiceManager] Failed to join channel: Already connected to a voice channel.
+Traceback (most recent call last):
+  File "/home/runner/workspace/voice/session_manager.py", line 127, in join_channel
+    vc = await channel.connect(timeout=60.0, reconnect=False)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/workspace/.pythonlibs/lib/python3.11/site-packages/discord/abc.py", line 1967, in connect
+    raise ClientException("Already connected to a voice channel.")
+discord.errors.ClientException: Already connected to a voice channel.
+>>> join_channel returned: False

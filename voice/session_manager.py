@@ -123,18 +123,33 @@ class VoiceSessionManager:
             vc = None
             for attempt in range(3):
                 try:
+                    # Force cleanup any existing voice client before connecting
+                    if guild.voice_client:
+                        logger.info(f"[VoiceManager] Cleaning up existing voice_client before attempt {attempt + 1}")
+                        try:
+                            await guild.voice_client.disconnect(force=True)
+                        except Exception:
+                            pass
+                        await asyncio.sleep(0.3)
+                    
                     logger.info(f"[VoiceManager] Connection attempt {attempt + 1}/3")
-                    vc = await channel.connect(timeout=60.0, reconnect=False)
+                    vc = await channel.connect(timeout=30.0, reconnect=True)
                     if vc and vc.is_connected():
                         break
                 except Exception as conn_err:
                     logger.warning(f"[VoiceManager] Attempt {attempt + 1} failed: {conn_err}")
+                    # Force cleanup the guild's voice client
+                    if guild.voice_client:
+                        try:
+                            await guild.voice_client.disconnect(force=True)
+                        except Exception:
+                            pass
                     try:
                         await self.leave_channel(guild_id)
                     except Exception:
                         pass
                     if attempt < 2:
-                        await asyncio.sleep(0.5)  # Brief wait before retry
+                        await asyncio.sleep(1.0)  # Wait before retry
                     else:
                         raise
 
