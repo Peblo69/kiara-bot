@@ -133,26 +133,60 @@ class VoiceSessionManager:
                         await asyncio.sleep(0.5)
                     
                     logger.info(f"[VoiceManager] Connection attempt {attempt + 1}/3")
-                    # Use asyncio.wait_for to add a hard timeout
-                    vc = await asyncio.wait_for(
-                        channel.connect(timeout=20.0, reconnect=False),
-                        timeout=25.0
-                    )
-                    logger.info(f"[VoiceManager] connect() returned, checking is_connected...")
+                    
+                    # Start connection in background and poll for success
+                    connect_task = asyncio.create_task(channel.connect(timeout=30.0, reconnect=False))
+                    
+                    # Poll for connection with timeout
+                    start_time = asyncio.get_event_loop().time()
+                    timeout_secs = 15.0
+                    
+                    while asyncio.get_event_loop().time() - start_time < timeout_secs:
+                        await asyncio.sleep(0.5)
+                        
+                        # Check if guild.voice_client is connected
+                        if guild.voice_client and guild.voice_client.is_connected():
+                            logger.info(f"[VoiceManager] Voice client connected via polling!")
+                            vc = guild.voice_client
+                            # Cancel the connect task if it's still running
+                            if not connect_task.done():
+                                connect_task.cancel()
+                                try:
+                                    await connect_task
+                                except (asyncio.CancelledError, Exception):
+                                    pass
+                            break
+                        
+                        # Check if task completed
+                        if connect_task.done():
+                            try:
+                                vc = connect_task.result()
+                                logger.info(f"[VoiceManager] connect() returned: {vc}")
+                            except Exception as e:
+                                logger.warning(f"[VoiceManager] connect() failed: {e}")
+                                vc = None
+                            break
+                    
                     if vc and vc.is_connected():
                         logger.info(f"[VoiceManager] Connected successfully!")
                         break
                     else:
-                        logger.warning(f"[VoiceManager] vc returned but not connected, retrying...")
-                except asyncio.TimeoutError:
-                    logger.warning(f"[VoiceManager] Attempt {attempt + 1} timed out")
-                    if guild.voice_client:
-                        try:
-                            await guild.voice_client.disconnect(force=True)
-                        except Exception:
-                            pass
-                    if attempt < 2:
-                        await asyncio.sleep(1.0)
+                        # Cancel and cleanup
+                        if not connect_task.done():
+                            connect_task.cancel()
+                            try:
+                                await connect_task
+                            except (asyncio.CancelledError, Exception):
+                                pass
+                        logger.warning(f"[VoiceManager] Attempt {attempt + 1} - connection not established")
+                        if guild.voice_client:
+                            try:
+                                await guild.voice_client.disconnect(force=True)
+                            except Exception:
+                                pass
+                        if attempt < 2:
+                            await asyncio.sleep(1.0)
+                            
                 except Exception as conn_err:
                     logger.warning(f"[VoiceManager] Attempt {attempt + 1} failed: {conn_err}")
                     # Force cleanup the guild's voice client
