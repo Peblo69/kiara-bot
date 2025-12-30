@@ -1,0 +1,26 @@
+03:12:41 INFO discord.client: logging in using static token
+03:12:42 INFO discord.gateway: Shard ID None has sent the IDENTIFY payload.
+03:12:42 INFO discord.gateway: Shard ID None has connected to Gateway: ["gateway-prd-arm-us-east1-d-hl0m",{"micros":111809,"calls":["id_created",{"micros":533,"calls":[]},"session_lookup_time",{"micros":2117,"calls":[]},"session_lookup_finished",{"micros":11,"calls":[]},"discord-sessions-prd-2-171",{"micros":108570,"calls":["start_session",{"micros":102196,"calls":["discord-api-rpc-685f5fd59d-rxk9t",{"micros":50125,"calls":["get_user",{"micros":9802},"get_guilds",{"micros":3460},"send_scheduled_deletion_message",{"micros":12},"guild_join_requests",{"micros":482},"authorized_ip_coro",{"micros":9},"pending_payments",{"micros":428},"apex_experiments",{"micros":27286},"user_activities",{"micros":4},"played_application_ids",{"micros":2},"linked_users",{"micros":2}]}]},"starting_guild_connect",{"micros":41,"calls":[]},"presence_started",{"micros":259,"calls":[]},"guilds_started",{"micros":57,"calls":[]},"lobbies_started",{"micros":1,"calls":[]},"guilds_connect",{"micros":1,"calls":[]},"presence_connect",{"micros":5994,"calls":[]},"connect_finished",{"micros":6002,"calls":[]},"build_ready",{"micros":12,"calls":[]},"clean_ready",{"micros":0,"calls":[]},"optimize_ready",{"micros":1,"calls":[]},"split_ready",{"micros":0,"calls":[]}]}]}] (Session ID: 47d4bca2bfec8b358d10d5703d3bf67b).
+==================================================
+  Kiara Intelligence is online!
+  Logged in as: Kiara Intelligence#6723
+  Servers: 1
+  Rate limit: 10 RPM
+  Daily limit: 15 per user
+  Voice AI: ENABLED
+==================================================
+Queue worker started (limit: 10 RPM)
+[Voice] Voice session manager initialized
+Bot ready - skipping manual command sync
+>>> VJOIN CALLED BY yuginoh (ASTRO)
+>>> DEFERRED
+>>> TARGET CHANNEL: Talk & Chill
+>>> CALLING join_channel...
+03:13:53 INFO voice.session: [VoiceManager] join_channel called for Talk & Chill (guild 1075754111896666222)
+03:13:53 INFO voice.session: [VoiceManager] Calling channel.connect(timeout=60)...
+03:13:53 INFO voice.session: [VoiceManager] Connection attempt 1/3
+03:13:53 INFO discord.voice_client: Connecting to voice...
+03:13:53 INFO discord.voice_client: Starting voice handshake... (connection attempt 1)
+03:13:54 INFO voice.state: Bot voice state: guild=1075754111896666222 before=None after=Talk & Chill (1212485856879845428)
+03:13:54 INFO discord.voice_client: Voice handshake complete. Endpoint found c-mxp05-79b431d2.discord.media:2087
+03:14:54 WARNING discord.gateway: Shard ID None has stopped responding to the gateway. Closing and restarting.
