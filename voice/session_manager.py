@@ -119,7 +119,7 @@ class VoiceSessionManager:
 
             # Connect to voice channel - disable reconnect to avoid 4006 loop
             logger.info(f"[VoiceManager] Calling channel.connect(timeout=60)...")
-            vc = await channel.connect(timeout=60.0, reconnect=False, self_deaf=False)
+            vc = await channel.connect(timeout=60.0, reconnect=False)
             logger.info(f"[VoiceManager] channel.connect() returned! vc={vc}")
             self._voice_clients[guild_id] = vc
 
