@@ -1,0 +1,51 @@
+  Logged in as: Kiara Intelligence#6723
+  Servers: 1
+  Rate limit: 10 RPM
+  Daily limit: 15 per user
+  Voice AI: ENABLED
+==================================================
+Queue worker started (limit: 10 RPM)
+[Voice] Voice session manager initialized
+Bot ready - skipping manual command sync
+>>> VJOIN CALLED BY yuginoh (ASTRO)
+>>> DEFERRED
+>>> TARGET CHANNEL: Talk & Chill
+>>> CALLING join_channel...
+03:43:55 INFO voice.session: [VoiceManager] join_channel called for Talk & Chill (guild 1075754111896666222)
+03:43:55 INFO voice.session: [VoiceManager] Calling channel.connect()...
+03:43:55 INFO voice.session: [VoiceManager] Connection attempt 1/3
+03:43:55 INFO discord.voice_client: Connecting to voice...
+03:43:55 INFO discord.voice_client: Starting voice handshake... (connection attempt 1)
+03:43:55 INFO voice.state: Bot voice state: guild=1075754111896666222 before=Talk & Chill (1212485856879845428) after=Talk & Chill (1212485856879845428)
+03:43:55 INFO discord.voice_client: Voice handshake complete. Endpoint found c-mxp05-79b431d2.discord.media:2087
+03:43:55 INFO voice.session: [VoiceManager] Voice client ready via polling! is_connected=False
+03:43:55 INFO voice.session: [VoiceManager] Connected successfully! is_connected=False
+03:43:55 INFO voice.session: [VoiceManager] channel.connect() returned! vc=<discord.voice_client.VoiceClient object at 0x7fd589bbe350>
+03:43:56 INFO voice.session: [VoiceManager] Connection established, setting up audio...
+03:44:06 WARNING voice.session: [VoiceManager] Voice WS never became ready, but proceeding anyway...
+03:44:06 WARNING voice.session: [VoiceManager] Recording start failed: Not connected to voice channel. - voice AI may not work
+03:44:06 INFO voice.session: [VoiceManager] Successfully joined Talk & Chill in Kiara Intelligence
+>>> join_channel returned: True
+03:44:21 INFO voice.session: [VoiceManager] join_channel called for Talk & Chill (guild 1075754111896666222)
+03:44:21 INFO voice.session: [VoiceManager] Cleaning up stale connection...
+03:44:21 INFO voice.session: [VoiceManager] leave_channel called for guild 1075754111896666222
+[VoiceManager] Left voice channel in guild 1075754111896666222
+03:44:21 INFO voice.session: [VoiceManager] Disconnecting existing voice client...
+03:44:21 INFO discord.voice_client: The voice handshake is being terminated for Channel ID 1212485856879845428 (Guild ID 1075754111896666222)
+03:44:21 INFO voice.state: Bot voice state: guild=1075754111896666222 before=Talk & Chill (1212485856879845428) after=None
+03:44:22 INFO voice.session: [VoiceManager] Calling channel.connect()...
+03:44:22 INFO voice.session: [VoiceManager] Connection attempt 1/3
+03:44:22 INFO discord.voice_client: Connecting to voice...
+03:44:22 INFO discord.voice_client: Starting voice handshake... (connection attempt 1)
+03:44:22 INFO voice.state: Bot voice state: guild=1075754111896666222 before=None after=Talk & Chill (1212485856879845428)
+03:44:22 INFO discord.voice_client: Voice handshake complete. Endpoint found c-mxp05-79b431d2.discord.media:2087
+03:44:22 INFO voice.session: [VoiceManager] Voice client ready via polling! is_connected=False
+03:44:22 INFO voice.session: [VoiceManager] Connected successfully! is_connected=False
+03:44:22 INFO voice.session: [VoiceManager] channel.connect() returned! vc=<discord.voice_client.VoiceClient object at 0x7fd589bbe350>
+03:44:23 INFO voice.session: [VoiceManager] Connection established, setting up audio...
+03:44:33 WARNING voice.session: [VoiceManager] Voice WS never became ready, but proceeding anyway...
+03:44:33 WARNING voice.session: [VoiceManager] Recording start failed: Not connected to voice channel. - voice AI may not work
+03:44:33 INFO voice.session: [VoiceManager] Successfully joined Talk & Chill in Kiara Intelligence
+03:44:33 INFO voice.session: [VoiceManager] start_session: guild=1075754111896666222 user=1062107848487731280
+03:44:33 ERROR voice.gemini: Gemini live connection error: received 1008 (policy violation) models/gemini-2.5-flash-preview-native-audio-dialog is not found for API version v1beta, or is not supported for bidiGenera; then sent 1008 (policy violation) models/gemini-2.5-flash-preview-native-audio-dialog is not found for API version v1beta, or is not supported for bidiGenera
+03:44:33 ERROR voice.session: [VoiceManager] Failed to connect Gemini for user 1062107848487731280

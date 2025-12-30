@@ -20,7 +20,7 @@ class GeminiLiveSession:
     """
 
     # Model for native audio (voice-to-voice)
-    MODEL = "gemini-2.5-flash-preview-native-audio-dialog"
+    MODEL = "gemini-2.5-flash-native-audio-preview-12-2025"
 
     # Alternative models:
     # "gemini-2.0-flash-live-001" - Half-cascade (good quality)
