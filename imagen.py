@@ -2,10 +2,17 @@ from google import genai
 from google.genai import types
 import asyncio
 import base64
-from config import GOOGLE_API_KEY
+import os
 
-# Initialize client
-client = genai.Client(api_key=GOOGLE_API_KEY)
+# Get API key directly from environment (more reliable in containers)
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+
+# Initialize client (only if API key exists)
+client = None
+if GOOGLE_API_KEY:
+    client = genai.Client(api_key=GOOGLE_API_KEY)
+else:
+    print("[WARNING] GOOGLE_API_KEY not set - image generation disabled")
 
 # Models - Gemini 3 Pro Image works globally
 MODELS = {
