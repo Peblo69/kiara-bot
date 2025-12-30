@@ -1,6 +1,6 @@
 # Discord - IMPORTANT: py-cord must be installed, NOT discord.py
-# Uninstall discord.py first if present, then install py-cord
-py-cord[voice]==2.6.1
+# Using 2.5.0 - version 2.6.1 has voice connection issues
+py-cord[voice]==2.5.0
 
 # Google AI
 google-generativeai==0.8.3
