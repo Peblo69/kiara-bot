@@ -119,6 +119,28 @@ class VoiceSessionManager:
             # Connect to voice channel with retry logic
             logger.info(f"[VoiceManager] Calling channel.connect()...")
 
+            # Helper to check if voice is actually ready (works around py-cord 2.7 bug)
+            def _is_voice_ready(vc_check) -> bool:
+                """Check if voice connection is usable, even if is_connected() is False"""
+                if not vc_check:
+                    return False
+                # Standard check
+                if vc_check.is_connected():
+                    return True
+                # py-cord 2.7.0 workaround: check internal state
+                try:
+                    ws = getattr(vc_check, 'ws', None)
+                    if ws:
+                        # Check for secret_key (indicates encryption is ready)
+                        if getattr(ws, 'secret_key', None):
+                            return True
+                        # Check for keepalive (indicates connection is active)
+                        if getattr(ws, '_keep_alive', None):
+                            return True
+                except Exception:
+                    pass
+                return False
+
             # Try connecting with retries
             vc = None
             for attempt in range(3):
@@ -144,9 +166,9 @@ class VoiceSessionManager:
                     while asyncio.get_event_loop().time() - start_time < timeout_secs:
                         await asyncio.sleep(0.5)
                         
-                        # Check if guild.voice_client is connected
-                        if guild.voice_client and guild.voice_client.is_connected():
-                            logger.info(f"[VoiceManager] Voice client connected via polling!")
+                        # Check if guild.voice_client is ready (using workaround)
+                        if guild.voice_client and _is_voice_ready(guild.voice_client):
+                            logger.info(f"[VoiceManager] Voice client ready via polling! is_connected={guild.voice_client.is_connected()}")
                             vc = guild.voice_client
                             # Cancel the connect task if it's still running
                             if not connect_task.done():
@@ -167,8 +189,8 @@ class VoiceSessionManager:
                                 vc = None
                             break
                     
-                    if vc and vc.is_connected():
-                        logger.info(f"[VoiceManager] Connected successfully!")
+                    if vc and _is_voice_ready(vc):
+                        logger.info(f"[VoiceManager] Connected successfully! is_connected={vc.is_connected()}")
                         break
                     else:
                         # Cancel and cleanup
@@ -214,9 +236,9 @@ class VoiceSessionManager:
             # Wait for connection to stabilize
             await asyncio.sleep(1.0)
 
-            # Verify connection
-            if not vc.is_connected():
-                logger.error(f"[VoiceManager] Connection not established after connect()")
+            # Verify connection using workaround
+            if not _is_voice_ready(vc):
+                logger.error(f"[VoiceManager] Connection not ready after connect()")
                 return False
 
             logger.info("[VoiceManager] Connection established, setting up audio...")
