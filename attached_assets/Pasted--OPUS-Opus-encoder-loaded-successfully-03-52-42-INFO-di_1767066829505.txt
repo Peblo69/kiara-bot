@@ -1,0 +1,62 @@
+[OPUS] Opus encoder loaded successfully
+03:52:42 INFO discord.client: logging in using static token
+03:52:42 INFO discord.gateway: Shard ID None has sent the IDENTIFY payload.
+03:52:43 INFO discord.gateway: Shard ID None has connected to Gateway: ["gateway-prd-arm-us-east1-d-8p1k",{"micros":380017,"calls":["id_created",{"micros":701,"calls":[]},"session_lookup_time",{"micros":355,"calls":[]},"session_lookup_finished",{"micros":8,"calls":[]},"discord-sessions-prd-2-195",{"micros":378578,"calls":["start_session",{"micros":365174,"calls":["discord-api-rpc-685f5fd59d-5k7gz",{"micros":271323,"calls":["get_user",{"micros":7700},"get_guilds",{"micros":75936},"send_scheduled_deletion_message",{"micros":14},"guild_join_requests",{"micros":4},"authorized_ip_coro",{"micros":13},"pending_payments",{"micros":556},"apex_experiments",{"micros":77239},"user_activities",{"micros":15},"played_application_ids",{"micros":4},"linked_users",{"micros":4}]}]},"starting_guild_connect",{"micros":36,"calls":[]},"presence_started",{"micros":300,"calls":[]},"guilds_started",{"micros":59,"calls":[]},"lobbies_started",{"micros":1,"calls":[]},"guilds_connect",{"micros":0,"calls":[]},"presence_connect",{"micros":12986,"calls":[]},"connect_finished",{"micros":12993,"calls":[]},"build_ready",{"micros":12,"calls":[]},"clean_ready",{"micros":1,"calls":[]},"optimize_ready",{"micros":0,"calls":[]},"split_ready",{"micros":0,"calls":[]}]}]}] (Session ID: dc69384b48cb8a0fdad4533b62385606).
+==================================================
+  Kiara Intelligence is online!
+  Logged in as: Kiara Intelligence#6723
+  Servers: 1
+  Rate limit: 10 RPM
+  Daily limit: 15 per user
+  Voice AI: ENABLED
+==================================================
+Queue worker started (limit: 10 RPM)
+[Voice] Voice session manager initialized
+Bot ready - skipping manual command sync
+>>> VJOIN CALLED BY yuginoh (ASTRO)
+>>> DEFERRED
+>>> TARGET CHANNEL: Talk & Chill
+>>> CALLING join_channel...
+03:53:06 INFO voice.session: [VoiceManager] join_channel called for Talk & Chill (guild 1075754111896666222)
+03:53:06 INFO voice.session: [VoiceManager] Calling channel.connect()...
+03:53:06 INFO voice.session: [VoiceManager] Connection attempt 1/3
+03:53:06 INFO discord.voice_client: Connecting to voice...
+03:53:06 INFO discord.voice_client: Starting voice handshake... (connection attempt 1)
+03:53:06 INFO voice.state: Bot voice state: guild=1075754111896666222 before=None after=Talk & Chill (1212485856879845428)
+03:53:06 INFO discord.voice_client: Voice handshake complete. Endpoint found c-mxp05-79b431d2.discord.media:2087
+03:53:07 INFO voice.session: [VoiceManager] Voice client ready via polling! is_connected=False
+03:53:07 INFO voice.session: [VoiceManager] Connected successfully! is_connected=False
+03:53:07 INFO voice.session: [VoiceManager] channel.connect() returned! vc=<discord.voice_client.VoiceClient object at 0x7fc822dc5c10>
+03:53:08 INFO voice.session: [VoiceManager] Connection established, setting up audio...
+03:53:18 WARNING voice.session: [VoiceManager] Voice WS never became ready, but proceeding anyway...
+03:53:18 WARNING voice.session: [VoiceManager] Recording start failed: Not connected to voice channel. - voice AI may not work
+03:53:18 INFO voice.session: [VoiceManager] Successfully joined Talk & Chill in Kiara Intelligence
+>>> join_channel returned: True
+03:53:29 INFO voice.session: [VoiceManager] join_channel called for Talk & Chill (guild 1075754111896666222)
+03:53:29 INFO voice.session: [VoiceManager] Cleaning up stale connection...
+03:53:29 INFO voice.session: [VoiceManager] leave_channel called for guild 1075754111896666222
+[VoiceManager] Left voice channel in guild 1075754111896666222
+03:53:29 INFO voice.session: [VoiceManager] Disconnecting existing voice client...
+03:53:29 INFO discord.voice_client: The voice handshake is being terminated for Channel ID 1212485856879845428 (Guild ID 1075754111896666222)
+03:53:29 INFO voice.state: Bot voice state: guild=1075754111896666222 before=Talk & Chill (1212485856879845428) after=None
+03:53:29 INFO voice.session: [VoiceManager] Calling channel.connect()...
+03:53:29 INFO voice.session: [VoiceManager] Connection attempt 1/3
+03:53:29 INFO discord.voice_client: Connecting to voice...
+03:53:29 INFO discord.voice_client: Starting voice handshake... (connection attempt 1)
+03:53:30 INFO voice.state: Bot voice state: guild=1075754111896666222 before=None after=Talk & Chill (1212485856879845428)
+03:53:30 INFO discord.voice_client: Voice handshake complete. Endpoint found c-mxp05-79b431d2.discord.media:2087
+03:53:30 INFO voice.session: [VoiceManager] Voice client ready via polling! is_connected=False
+03:53:30 INFO voice.session: [VoiceManager] Connected successfully! is_connected=False
+03:53:30 INFO voice.session: [VoiceManager] channel.connect() returned! vc=<discord.voice_client.VoiceClient object at 0x7fc821417390>
+03:53:31 INFO voice.session: [VoiceManager] Connection established, setting up audio...
+03:53:41 WARNING voice.session: [VoiceManager] Voice WS never became ready, but proceeding anyway...
+03:53:41 WARNING voice.session: [VoiceManager] Recording start failed: Not connected to voice channel. - voice AI may not work
+03:53:41 INFO voice.session: [VoiceManager] Successfully joined Talk & Chill in Kiara Intelligence
+03:53:41 INFO voice.session: [VoiceManager] start_session: guild=1075754111896666222 user=1062107848487731280
+03:53:41 ERROR voice.gemini: Gemini live connection error: received 1007 (invalid frame payload data) Request contains an invalid argument.; then sent 1007 (invalid frame payload data) Request contains an invalid argument.
+03:53:41 ERROR voice.session: [VoiceManager] Failed to connect Gemini for user 1062107848487731280
+^C03:53:45 INFO discord.client: Cleaning up tasks.
+03:53:45 INFO discord.client: Cleaning up after 3 tasks.
+03:53:45 INFO discord.voice_client: The voice handshake is being terminated for Channel ID 1212485856879845428 (Guild ID 1075754111896666222)
+03:53:45 INFO discord.client: All tasks finished cancelling.
+03:53:45 INFO discord.client: Closing the event loop.

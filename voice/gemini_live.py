@@ -19,12 +19,12 @@ class GeminiLiveSession:
     Latency: ~300-400ms response time
     """
 
-    # Model for native audio (voice-to-voice)
-    MODEL = "gemini-2.5-flash-native-audio-preview-12-2025"
+    # Model for live audio - use stable model that supports bidirectional audio
+    MODEL = "gemini-2.0-flash-live-001"
 
     # Alternative models:
-    # "gemini-2.0-flash-live-001" - Half-cascade (good quality)
-    # "gemini-2.5-flash-native-audio-preview" - Native audio preview
+    # "gemini-2.5-flash-native-audio-preview-12-2025" - Native audio (may not be available)
+    # "gemini-2.0-flash-exp" - Experimental
 
     SYSTEM_PROMPT = """You are Kiara, a friendly, witty, and helpful AI assistant living in a Discord voice channel.
 
@@ -97,18 +97,18 @@ You're hanging out in a Discord server helping people with whatever they need - 
 
             self.client = genai.Client(api_key=api_key)
 
-            # Configuration for native audio
-            config = {
-                "response_modalities": ["AUDIO", "TEXT"],
-                "system_instruction": self.SYSTEM_PROMPT,
-                "speech_config": {
-                    "voice_config": {
-                        "prebuilt_voice_config": {
-                            "voice_name": self.voice
-                        }
-                    }
-                }
-            }
+            # Configuration for live audio using proper types
+            config = types.LiveConnectConfig(
+                response_modalities=["AUDIO"],
+                system_instruction=self.SYSTEM_PROMPT,
+                speech_config=types.SpeechConfig(
+                    voice_config=types.VoiceConfig(
+                        prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                            voice_name=self.voice
+                        )
+                    )
+                )
+            )
 
             # Connect to Live API using async context manager
             self._session_context = self.client.aio.live.connect(
