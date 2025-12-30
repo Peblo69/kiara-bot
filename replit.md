@@ -52,5 +52,28 @@ Uses SQLite (`nano_midjourney.db`) for storing:
 - Reference images
 - Private channel mappings
 
+## Railway Deployment
+Discord voice requires UDP connections which Replit blocks. Deploy to Railway for voice features.
+
+### Deployment Files
+- `Procfile` - Worker process definition
+- `railway.json` - Railway configuration
+- `nixpacks.toml` - System dependencies (ffmpeg, libopus)
+
+### Setup Steps
+1. Push this repo to GitHub
+2. Create new project in Railway from GitHub repo
+3. Add environment variables in Railway:
+   - `DISCORD_TOKEN`
+   - `GOOGLE_API_KEY`
+4. Deploy!
+
+### Notes
+- Uses py-cord from master branch for latest voice fixes
+- Voice auto-activates (no wake word needed)
+- Gemini Live API: `gemini-2.0-flash-live-001`
+
 ## Recent Changes
+- 2024-12-30: Prepared Railway deployment config
+- 2024-12-30: Fixed Gemini model to stable version
 - 2024-12-30: Initial setup for Replit environment
