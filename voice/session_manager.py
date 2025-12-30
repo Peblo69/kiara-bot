@@ -111,12 +111,15 @@ class VoiceSessionManager:
             if guild.voice_client:
                 # Disconnect existing connection
                 logger.info("[VoiceManager] Disconnecting existing voice client...")
-                await guild.voice_client.disconnect(force=True)
-                await asyncio.sleep(0.5)
+                try:
+                    await guild.voice_client.disconnect(force=True)
+                except Exception:
+                    pass
+                await asyncio.sleep(2.0)  # Wait longer for cleanup
 
-            # Connect to voice channel with longer timeout
-            logger.info(f"[VoiceManager] Calling channel.connect(timeout=30)...")
-            vc = await channel.connect(timeout=30.0, reconnect=True)
+            # Connect to voice channel - disable reconnect to avoid 4006 loop
+            logger.info(f"[VoiceManager] Calling channel.connect(timeout=60)...")
+            vc = await channel.connect(timeout=60.0, reconnect=False, self_deaf=False)
             logger.info(f"[VoiceManager] channel.connect() returned! vc={vc}")
             self._voice_clients[guild_id] = vc
 
