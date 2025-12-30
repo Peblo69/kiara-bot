@@ -1,7 +1,7 @@
 # Secrets - NEVER commit these
 .env
 credentials.json
-*.json
+*.credentials.json
 
 # Database
 *.db
