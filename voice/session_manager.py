@@ -106,6 +106,9 @@ class VoiceSessionManager:
                     logger.info("[VoiceManager] Cleaning up stale connection...")
                     await self.leave_channel(guild_id)
 
+            # Small delay to ensure gateway is stable
+            await asyncio.sleep(0.5)
+
             # Check if bot is already in a voice channel (not tracked by us)
             guild = channel.guild
             if guild.voice_client:
@@ -117,9 +120,28 @@ class VoiceSessionManager:
                     pass
                 await asyncio.sleep(2.0)  # Wait longer for cleanup
 
-            # Connect to voice channel - disable reconnect to avoid 4006 loop
+            # Connect to voice channel with retry logic
             logger.info(f"[VoiceManager] Calling channel.connect(timeout=60)...")
-            vc = await channel.connect(timeout=60.0, reconnect=False)
+
+            # Try connecting with retries
+            vc = None
+            for attempt in range(3):
+                try:
+                    logger.info(f"[VoiceManager] Connection attempt {attempt + 1}/3")
+                    vc = await channel.connect(timeout=60.0, reconnect=True)
+                    if vc and vc.is_connected():
+                        break
+                except Exception as conn_err:
+                    logger.warning(f"[VoiceManager] Attempt {attempt + 1} failed: {conn_err}")
+                    if attempt < 2:
+                        await asyncio.sleep(2.0)  # Wait before retry
+                    else:
+                        raise
+
+            if not vc:
+                logger.error("[VoiceManager] All connection attempts failed")
+                return False
+
             logger.info(f"[VoiceManager] channel.connect() returned! vc={vc}")
             self._voice_clients[guild_id] = vc
 
