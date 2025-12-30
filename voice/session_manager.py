@@ -120,7 +120,7 @@ class VoiceSessionManager:
             logger.info(f"[VoiceManager] Calling channel.connect()...")
 
             # Helper to check if voice is actually ready (works around py-cord 2.7 bug)
-            def _is_voice_ready(vc_check, debug=False) -> bool:
+            def _is_voice_ready(vc_check, target_channel, debug=False) -> bool:
                 """Check if voice connection is usable, even if is_connected() is False"""
                 if not vc_check:
                     return False
@@ -132,19 +132,18 @@ class VoiceSessionManager:
                     ws = getattr(vc_check, 'ws', None)
                     if debug:
                         logger.info(f"[DEBUG] vc attrs: ws={'exists' if ws else None}, channel={getattr(vc_check, 'channel', None)}")
-                        if ws:
-                            sk = getattr(ws, 'secret_key', 'MISSING')
-                            ka = getattr(ws, '_keep_alive', 'MISSING')
-                            logger.info(f"[DEBUG] ws.secret_key={sk}, ws._keep_alive={ka}")
-                            # Also check all ws attributes
-                            ws_attrs = [a for a in dir(ws) if not a.startswith('__')]
-                            logger.info(f"[DEBUG] ws has attrs: {ws_attrs[:20]}")
                     if ws:
                         # Check for secret_key (indicates encryption is ready)
                         if getattr(ws, 'secret_key', None):
                             return True
                         # Check for keepalive (indicates connection is active)
                         if getattr(ws, '_keep_alive', None):
+                            return True
+                    # Alternative check: see if bot's voice state says we're in the channel
+                    if target_channel and target_channel.guild.me.voice:
+                        if target_channel.guild.me.voice.channel and target_channel.guild.me.voice.channel.id == target_channel.id:
+                            if debug:
+                                logger.info(f"[DEBUG] Bot voice state indicates in channel!")
                             return True
                 except Exception as e:
                     if debug:
@@ -182,7 +181,7 @@ class VoiceSessionManager:
                         do_debug = (poll_count % 4 == 0)
                         
                         # Check if guild.voice_client is ready (using workaround)
-                        if guild.voice_client and _is_voice_ready(guild.voice_client, debug=do_debug):
+                        if guild.voice_client and _is_voice_ready(guild.voice_client, channel, debug=do_debug):
                             logger.info(f"[VoiceManager] Voice client ready via polling! is_connected={guild.voice_client.is_connected()}")
                             vc = guild.voice_client
                             # Cancel the connect task if it's still running
@@ -204,7 +203,7 @@ class VoiceSessionManager:
                                 vc = None
                             break
                     
-                    if vc and _is_voice_ready(vc):
+                    if vc and _is_voice_ready(vc, channel):
                         logger.info(f"[VoiceManager] Connected successfully! is_connected={vc.is_connected()}")
                         break
                     else:
@@ -252,7 +251,7 @@ class VoiceSessionManager:
             await asyncio.sleep(1.0)
 
             # Verify connection using workaround
-            if not _is_voice_ready(vc):
+            if not _is_voice_ready(vc, channel):
                 logger.error(f"[VoiceManager] Connection not ready after connect()")
                 return False
 
