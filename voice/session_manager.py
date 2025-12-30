@@ -225,9 +225,18 @@ class VoiceSessionManager:
         logger.info(f"[VoiceManager] User {user_id} started speaking in guild {guild_id}")
 
         # Auto-start session if not in PTT mode and user doesn't have one
-        if not self._ptt_enabled and user_id not in self._sessions and member:
-            logger.info(f"[VoiceManager] Auto-starting session for {member.display_name}")
-            asyncio.create_task(self.start_session(guild_id, user_id, member))
+        if not self._ptt_enabled and user_id not in self._sessions:
+            # If member not provided, try to look it up
+            if member is None:
+                guild = self._bot.get_guild(guild_id)
+                if guild:
+                    member = guild.get_member(user_id)
+            
+            if member:
+                logger.info(f"[VoiceManager] Auto-starting session for {member.display_name}")
+                asyncio.create_task(self.start_session(guild_id, user_id, member))
+            else:
+                logger.warning(f"[VoiceManager] Could not find member {user_id} in guild {guild_id}")
 
     async def leave_channel(self, guild_id: int) -> None:
         """
