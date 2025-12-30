@@ -9,6 +9,27 @@ import os
 from datetime import datetime, timezone, timedelta
 import logging
 
+# Load opus for voice support (CRITICAL for voice to work)
+try:
+    import ctypes.util
+    opus_path = ctypes.util.find_library('opus')
+    if opus_path:
+        discord.opus.load_opus(opus_path)
+    else:
+        # Try common paths
+        for path in ['libopus.so.0', 'libopus.so', 'opus']:
+            try:
+                discord.opus.load_opus(path)
+                break
+            except OSError:
+                pass
+    if discord.opus.is_loaded():
+        print("[OPUS] Opus encoder loaded successfully")
+    else:
+        print("[OPUS] WARNING: Opus not loaded - voice may not work")
+except Exception as e:
+    print(f"[OPUS] Failed to load opus: {e}")
+
 # Logging setup - use DEBUG_VOICE=1 env var for verbose logging
 _debug_voice = os.getenv("DEBUG_VOICE", "0") == "1"
 logging.basicConfig(
