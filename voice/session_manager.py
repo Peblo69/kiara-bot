@@ -168,8 +168,13 @@ class VoiceSessionManager:
         print(f"[VoiceManager] Recording stopped in guild {guild_id}")
 
     def _on_user_speaking(self, guild_id: int, user_id: int, member: Optional[discord.Member]) -> None:
-        """Called when a new user starts speaking"""
-        print(f"[VoiceManager] User {user_id} started speaking in guild {guild_id}")
+        """Called when a new user starts speaking - auto-start session for cloud mode"""
+        logger.info(f"[VoiceManager] User {user_id} started speaking in guild {guild_id}")
+
+        # Auto-start session if not in PTT mode and user doesn't have one
+        if not self._ptt_enabled and user_id not in self._sessions and member:
+            logger.info(f"[VoiceManager] Auto-starting session for {member.display_name}")
+            asyncio.create_task(self.start_session(guild_id, user_id, member))
 
     async def leave_channel(self, guild_id: int) -> None:
         """
