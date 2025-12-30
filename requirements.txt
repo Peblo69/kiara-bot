@@ -1,6 +1,6 @@
 # Discord
 py-cord==2.6.1
-discord-ext-voice-recv==0.6.0
+discord-ext-voice-recv>=0.5.2a179
 
 # Google AI
 google-generativeai==0.8.3
