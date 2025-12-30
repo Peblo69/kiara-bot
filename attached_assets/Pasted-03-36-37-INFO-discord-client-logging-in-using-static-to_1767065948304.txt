@@ -1,0 +1,49 @@
+03:36:37 INFO discord.client: logging in using static token
+03:36:37 INFO discord.gateway: Shard ID None has sent the IDENTIFY payload.
+03:36:37 INFO discord.gateway: Shard ID None has connected to Gateway: ["gateway-prd-arm-us-east1-b-z71v",{"micros":108808,"calls":["id_created",{"micros":470,"calls":[]},"session_lookup_time",{"micros":272,"calls":[]},"session_lookup_finished",{"micros":13,"calls":[]},"discord-sessions-prd-2-85",{"micros":107546,"calls":["start_session",{"micros":85771,"calls":["discord-api-rpc-685f5fd59d-dlbwc",{"micros":41534,"calls":["get_user",{"micros":5298},"get_guilds",{"micros":3005},"send_scheduled_deletion_message",{"micros":15},"guild_join_requests",{"micros":375},"authorized_ip_coro",{"micros":10},"pending_payments",{"micros":538},"apex_experiments",{"micros":34447},"user_activities",{"micros":7},"played_application_ids",{"micros":4},"linked_users",{"micros":4}]}]},"starting_guild_connect",{"micros":41,"calls":[]},"presence_started",{"micros":4965,"calls":[]},"guilds_started",{"micros":78,"calls":[]},"lobbies_started",{"micros":2,"calls":[]},"guilds_connect",{"micros":1,"calls":[]},"presence_connect",{"micros":16665,"calls":[]},"connect_finished",{"micros":16673,"calls":[]},"build_ready",{"micros":13,"calls":[]},"clean_ready",{"micros":1,"calls":[]},"optimize_ready",{"micros":0,"calls":[]},"split_ready",{"micros":1,"calls":[]}]}]}] (Session ID: 67292dedff3b8251e6b3641a2983825d).
+==================================================
+  Kiara Intelligence is online!
+  Logged in as: Kiara Intelligence#6723
+  Servers: 1
+  Rate limit: 10 RPM
+  Daily limit: 15 per user
+  Voice AI: ENABLED
+==================================================
+Queue worker started (limit: 10 RPM)
+[Voice] Voice session manager initialized
+Bot ready - skipping manual command sync
+>>> VJOIN CALLED BY yuginoh (ASTRO)
+>>> DEFERRED
+>>> TARGET CHANNEL: Talk & Chill
+>>> CALLING join_channel...
+03:38:36 INFO voice.session: [VoiceManager] join_channel called for Talk & Chill (guild 1075754111896666222)
+03:38:36 INFO voice.session: [VoiceManager] Calling channel.connect()...
+03:38:36 INFO voice.session: [VoiceManager] Connection attempt 1/3
+03:38:36 INFO discord.voice_client: Connecting to voice...
+03:38:36 INFO discord.voice_client: Starting voice handshake... (connection attempt 1)
+03:38:36 INFO voice.state: Bot voice state: guild=1075754111896666222 before=None after=Talk & Chill (1212485856879845428)
+03:38:36 INFO discord.voice_client: Voice handshake complete. Endpoint found c-mxp05-79b431d2.discord.media:2087
+03:38:38 INFO voice.session: [DEBUG] vc attrs: ws=..., channel=Talk & Chill
+03:38:40 INFO voice.session: [DEBUG] vc attrs: ws=..., channel=Talk & Chill
+03:38:42 INFO voice.session: [DEBUG] vc attrs: ws=..., channel=Talk & Chill
+03:38:44 INFO voice.session: [DEBUG] vc attrs: ws=..., channel=Talk & Chill
+03:38:46 INFO voice.session: [DEBUG] vc attrs: ws=..., channel=Talk & Chill
+03:38:48 INFO voice.session: [DEBUG] vc attrs: ws=..., channel=Talk & Chill
+03:38:50 INFO voice.session: [DEBUG] vc attrs: ws=..., channel=Talk & Chill
+03:38:51 WARNING voice.session: [VoiceManager] Attempt 1 - connection not established
+03:38:51 INFO discord.voice_client: The voice handshake is being terminated for Channel ID 1212485856879845428 (Guild ID 1075754111896666222)
+03:38:51 INFO voice.state: Bot voice state: guild=1075754111896666222 before=Talk & Chill (1212485856879845428) after=None
+03:38:52 INFO voice.session: [VoiceManager] Connection attempt 2/3
+03:38:52 INFO discord.voice_client: Connecting to voice...
+03:38:52 INFO discord.voice_client: Starting voice handshake... (connection attempt 1)
+03:38:52 INFO voice.state: Bot voice state: guild=1075754111896666222 before=None after=Talk & Chill (1212485856879845428)
+03:38:52 INFO discord.voice_client: Voice handshake complete. Endpoint found c-mxp05-79b431d2.discord.media:2087
+03:38:52 ERROR asyncio: Unclosed connection
+client_connection: Connection<ConnectionKey(host='c-mxp05-79b431d2.discord.media', port=2087, is_ssl=True, ssl=True, proxy=None, proxy_auth=None, proxy_headers_hash=None)>
+03:38:54 INFO voice.session: [DEBUG] vc attrs: ws=..., channel=Talk & Chill
+03:38:56 INFO voice.session: [DEBUG] vc attrs: ws=..., channel=Talk & Chill
+03:38:58 INFO voice.session: [DEBUG] vc attrs: ws=..., channel=Talk & Chill
+03:39:00 INFO voice.session: [DEBUG] vc attrs: ws=..., channel=Talk & Chill
+03:39:02 INFO voice.session: [DEBUG] vc attrs: ws=..., channel=Talk & Chill
+03:39:04 INFO voice.session: [DEBUG] vc attrs: ws=..., channel=Talk & Chill
+03:39:06 INFO voice.session: [DEBUG] vc attrs: ws=..., channel=Talk & Chill

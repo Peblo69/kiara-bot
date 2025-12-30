@@ -131,9 +131,14 @@ class VoiceSessionManager:
                 try:
                     ws = getattr(vc_check, 'ws', None)
                     if debug:
-                        logger.info(f"[DEBUG] vc attrs: ws={ws}, channel={getattr(vc_check, 'channel', None)}")
+                        logger.info(f"[DEBUG] vc attrs: ws={'exists' if ws else None}, channel={getattr(vc_check, 'channel', None)}")
                         if ws:
-                            logger.info(f"[DEBUG] ws attrs: secret_key={getattr(ws, 'secret_key', 'NONE')}, _keep_alive={getattr(ws, '_keep_alive', 'NONE')}")
+                            sk = getattr(ws, 'secret_key', 'MISSING')
+                            ka = getattr(ws, '_keep_alive', 'MISSING')
+                            logger.info(f"[DEBUG] ws.secret_key={sk}, ws._keep_alive={ka}")
+                            # Also check all ws attributes
+                            ws_attrs = [a for a in dir(ws) if not a.startswith('__')]
+                            logger.info(f"[DEBUG] ws has attrs: {ws_attrs[:20]}")
                     if ws:
                         # Check for secret_key (indicates encryption is ready)
                         if getattr(ws, 'secret_key', None):
