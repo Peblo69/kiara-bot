@@ -128,11 +128,16 @@ class VoiceSessionManager:
             for attempt in range(3):
                 try:
                     logger.info(f"[VoiceManager] Connection attempt {attempt + 1}/3")
-                    vc = await channel.connect(timeout=60.0, reconnect=True)
+                    vc = await channel.connect(timeout=60.0, reconnect=False)
                     if vc and vc.is_connected():
                         break
                 except Exception as conn_err:
                     logger.warning(f"[VoiceManager] Attempt {attempt + 1} failed: {conn_err}")
+                    # Force cleanup between attempts to avoid "already connected" state
+                    try:
+                        await self.leave_channel(guild_id)
+                    except Exception:
+                        pass
                     if attempt < 2:
                         await asyncio.sleep(2.0)  # Wait before retry
                     else:
