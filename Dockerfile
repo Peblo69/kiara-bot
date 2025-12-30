@@ -10,10 +10,11 @@ RUN apt-get update && apt-get install -y \
 # Set work directory
 WORKDIR /app
 
-# Copy requirements first for caching
+# CACHE BUST v2 - force clean install
 COPY requirements.txt .
-# Uninstall discord.py if present (conflicts with py-cord)
-RUN pip uninstall -y discord.py discord || true
+# Remove ANY discord package first, then install py-cord
+RUN pip uninstall -y discord.py discord py-cord pycord 2>/dev/null || true
+RUN pip install --no-cache-dir py-cord[voice]==2.6.1
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
