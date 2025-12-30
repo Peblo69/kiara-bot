@@ -257,6 +257,22 @@ class VoiceSessionManager:
 
             logger.info("[VoiceManager] Connection established, setting up audio...")
 
+            # Wait for voice websocket to be ready (py-cord 2.7.0 bug workaround)
+            ws_ready = False
+            for wait_attempt in range(20):  # Wait up to 10 seconds
+                if vc.ws and getattr(vc.ws, 'secret_key', None):
+                    logger.info(f"[VoiceManager] Voice WS ready after {wait_attempt * 0.5}s")
+                    ws_ready = True
+                    break
+                if vc.is_connected():
+                    logger.info(f"[VoiceManager] is_connected() became True after {wait_attempt * 0.5}s")
+                    ws_ready = True
+                    break
+                await asyncio.sleep(0.5)
+            
+            if not ws_ready:
+                logger.warning("[VoiceManager] Voice WS never became ready, but proceeding anyway...")
+
             # Create audio player
             self._audio_players[guild_id] = VoicePlayer(vc)
 
@@ -272,7 +288,7 @@ class VoiceSessionManager:
                 vc.start_recording(sink, self._on_recording_stopped, guild_id)
                 logger.info("[VoiceManager] Recording started")
             except Exception as rec_err:
-                logger.warning(f"[VoiceManager] Recording start failed: {rec_err}")
+                logger.warning(f"[VoiceManager] Recording start failed: {rec_err} - voice AI may not work")
 
             self._queue[guild_id] = []
 

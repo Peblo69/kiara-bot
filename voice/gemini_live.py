@@ -76,9 +76,11 @@ You're hanging out in a Discord server helping people with whatever they need - 
 
         self.client = None
         self.session = None
+        self._session_context = None
         self.is_active = False
         self._receive_task = None
         self._audio_queue = asyncio.Queue()
+        self._session_task = None
 
     async def connect(self) -> bool:
         """
@@ -108,11 +110,12 @@ You're hanging out in a Discord server helping people with whatever they need - 
                 }
             }
 
-            # Connect to Live API
-            self.session = await self.client.aio.live.connect(
+            # Connect to Live API using async context manager
+            self._session_context = self.client.aio.live.connect(
                 model=self.MODEL,
                 config=config
             )
+            self.session = await self._session_context.__aenter__()
 
             self.is_active = True
 
@@ -242,13 +245,15 @@ You're hanging out in a Discord server helping people with whatever they need - 
             except asyncio.CancelledError:
                 pass
 
-        if self.session:
+        # Exit the async context manager properly
+        if self._session_context:
             try:
-                await self.session.close()
+                await self._session_context.__aexit__(None, None, None)
             except Exception:
                 pass
-            self.session = None
+            self._session_context = None
 
+        self.session = None
         self.client = None
         self.logger.info("Gemini live disconnected (user_id=%s)", self.user_id)
 
